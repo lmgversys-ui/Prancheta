@@ -297,6 +297,7 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
       <div class="foot">
         <button class="btn primary" id="copyTxt">Copiar orçamento</button>
         <button class="btn" id="copyCsv">Copiar planilha</button>
+        <button class="btn" id="pdfBtn">Baixar PDF</button>
         <button class="btn" id="newProj">Novo orçamento</button>
       </div>
     </aside>
@@ -1186,6 +1187,47 @@ $('#copyTxt').onclick=()=>{
   copy(L.join('\n'),'Orçamento copiado — cole no WhatsApp ou e-mail');
 };
 // spreadsheet: one row per piece, then cutouts and the total
+/* ---------- PDF ---------- */
+// jsPDF is fetched only when the button is used (the installed app keeps it in its offline cache afterwards)
+let jspdfP=null;
+const loadPdf=()=>jspdfP||(jspdfP=new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';sc.onload=()=>ok(window.jspdf.jsPDF);sc.onerror=()=>{jspdfP=null;sc.remove();no()};document.head.append(sc)}));
+// the whole drawing as a PNG: light colours, no grid or selection, framed to fit
+async function drawingPng(){
+  const W=900,H=600,keep={view:{...view},selId,multi:new Set(multi),tool,theme:document.documentElement.dataset.theme};
+  selId=null;multi.clear();tool='select';document.documentElement.dataset.theme='light';
+  svg.style.cssText=`position:fixed;left:0;top:0;width:${W}px;height:${H}px;visibility:hidden`;fit();
+  const cl=svg.cloneNode(true),cs=getComputedStyle(document.documentElement);
+  cl.removeAttribute('style');cl.querySelector('rect[fill="url(#gma)"]')?.remove();cl.setAttribute('width',W);cl.setAttribute('height',H);cl.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  const txt=new XMLSerializer().serializeToString(cl).replace(/var\((--[\w-]+)\)/g,(m,v)=>cs.getPropertyValue(v).trim()).replace(/(<svg[^>]*>)/,'$1<style>text{font-family:Helvetica,Arial,sans-serif}</style>');
+  svg.style.cssText='';view=keep.view;selId=keep.selId;multi=keep.multi;tool=keep.tool;
+  if(keep.theme)document.documentElement.dataset.theme=keep.theme;else delete document.documentElement.dataset.theme;renderAll();
+  const img=new Image();img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(txt);await img.decode();
+  const cv=document.createElement('canvas');cv.width=W*2;cv.height=H*2;const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);
+  return{png:cv.toDataURL('image/jpeg',.88),w:W,h:H};
+}
+async function exportPdf(){
+  let J;try{J=await loadPdf()}catch(e){toast('Sem internet: abra uma vez com internet para ativar o PDF');return}
+  flush();const c=calc(),doc=new J({unit:'mm',format:'a4',compress:true}),M=15,PW=210,PH=297,muted=[102,113,122],ink=[27,34,38];let y=M;
+  const T=t=>String(t).replace(/[—–]/g,'-').replace(/[•·]/g,'-');
+  const put=(t,x,size=10,style='normal',color=ink,align='left')=>{doc.setFont('helvetica',style);doc.setFontSize(size);doc.setTextColor(...color);doc.text(T(t),x,y,{align})};
+  const need=h=>{if(y+h>PH-M){doc.addPage();y=M}};
+  doc.setFillColor(26,99,160);doc.rect(0,0,PW,4,'F');
+  y=M+5;put('Orçamento',M,20,'bold');put(new Date().toLocaleDateString('pt-BR'),PW-M,10,'normal',muted,'right');
+  y+=8;put(S.name||'Sem nome',M,13,'bold');
+  const info=[S.tel,S.end].filter(Boolean).join('   |   ');if(info){y+=6;put(info,M,10,'normal',muted)}
+  y+=7;
+  if(pieces().length){try{const d=await drawingPng(),iw=PW-2*M,ih=Math.min(105,iw*d.h/d.w),w2=ih*d.w/d.h;doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y,w2,ih);y+=ih+7}catch(e){}}
+  for(const m of c.mats){
+    need(16);put(`${m.mat.name}  (${money(m.mat.price)} o m²)`,M,11.5,'bold');y+=6;
+    for(const r of c.rows.filter(r=>r.mat.id===m.mat.id)){need(6);put(r.p.name.slice(0,52),M+2,9.5);put((r.qty>1?r.qty+' peças de ':'')+sizeTxt(r),112,9.5,'normal',muted);put(f2(r.m2)+' m²',PW-M,9.5,'normal',ink,'right');y+=5}
+    put(`Subtotal: ${f2(m.m2l)} m²`,M+2,9.5,'bold');put(money(m.sub),PW-M,9.5,'bold',ink,'right');y+=9;
+  }
+  if(c.nCuts){need(12);put('Recortes',M,11.5,'bold');y+=6;for(const[n,q]of Object.entries(c.cutCount)){need(6);put(q+' '+plural(q,n).toLowerCase(),M+2,9.5);put(money(q*(+S.cutPrice||0)),PW-M,9.5,'normal',ink,'right');y+=5}y+=4}
+  need(18);doc.setDrawColor(225,230,228);doc.line(M,y,PW-M,y);y+=9;put('Total',M,14,'bold');put(money(c.total),PW-M,16,'bold',[30,122,74],'right');
+  y+=6;put(`${f2(c.m2l)} m² de pedra${c.nCuts?` e ${c.nCuts} recorte${c.nCuts>1?'s':''}`:''}${+S.lossPct?` (inclui ${fcm(S.lossPct)}% de perda)`:''}`,M,9,'normal',muted);
+  await saveFile('Orçamento '+(S.name||'sem nome')+' '+today(),doc.output('blob'),'pdf');
+}
+$('#pdfBtn').onclick=()=>exportPdf();
 $('#copyCsv').onclick=()=>{
   const c=calc(),q=v=>`"${String(v).replace(/"/g,'""')}"`,row=a=>a.map(q).join(';'),loss=1+(+S.lossPct||0)/100;
   const L=[row(['Peça','Tipo','Pedra','Formato','Comprimento (cm)','Largura (cm)','Quantidade','Recortes','Área (m²)','Preço do m² (R$)','Valor (R$)'])];
@@ -1219,10 +1261,10 @@ async function delProj(id){
   if(id===S.id)newProj();else renderLista();
 }
 let dl=null;window.claude?.use?.('downloads').then(d=>{dl=d});
-async function saveFile(name,text){
-  const filename=name.replace(/[\\/:*?"<>|]+/g,'-').slice(0,120)+'.json';
+async function saveFile(name,text,ext='json'){
+  const filename=name.replace(/[\\/:*?"<>|]+/g,'-').slice(0,120)+'.'+ext;
   if(dl){try{await dl.save({filename,data:text});toast('Arquivo salvo')}catch(e){if(e.code!=='declined')toast('Não foi possível salvar o arquivo')}return}
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  const a=document.createElement('a');a.href=URL.createObjectURL(text instanceof Blob?text:new Blob([text],{type:'application/json'}));a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
 const today=()=>new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
 const picker=Object.assign(document.createElement('input'),{type:'file',accept:'.json,application/json',hidden:true});document.body.append(picker);
