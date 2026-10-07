@@ -1416,14 +1416,21 @@ async function exportOs(){
   put(cfg.nome,M,y,15,'bold',TEAL);put('Ordem de serviço - oficina',R,y,13,'bold',INK,'right');y+=6;
   put('Orçamento '+(S.num||'sem número')+'   |   '+new Date().toLocaleDateString('pt-BR'),M,y,10,'normal',MUT);y+=8;
   put('Cliente: '+(S.name||'Sem nome'),M,y,11.5,'bold');y+=5.5;const info=[S.tel,S.end].filter(Boolean).join('   |   ');if(info){put(info,M,y,10,'normal',MUT);y+=5.5}
-  y+=3;doc.setFillColor(242,243,244);doc.rect(M,y,R-M,8,'F');put('Peça',M+2,y+5.5,10,'bold');put('Medidas',100,y+5.5,10,'bold');put('Qtd',148,y+5.5,10,'bold');put('Pedra',160,y+5.5,10,'bold');y+=13;
-  for(const r of c.rows){
+  y+=3;doc.setFillColor(242,243,244);doc.rect(M,y,R-M,8,'F');put('Peça',M+2,y+5.5,10,'bold');put('Medidas',100,y+5.5,10,'bold');put('Qtd',R-2,y+5.5,10,'bold',INK,'right');y+=15;
+  // grouped by stone, so each slab colour is cut in one go
+  const groups=[...new Set(c.rows.map(r=>r.mat.id))].map(id=>c.rows.filter(r=>r.mat.id===id));
+  for(const g of groups){
+    need(18);const n=g.reduce((a,r)=>a+r.qty,0),m2=g.reduce((a,r)=>a+r.m2,0);
+    doc.setFillColor(...TEAL);doc.rect(M,y-4.6,2,6.4,'F');put(g[0].mat.name,M+5,y,11.5,'bold',TEAL);put(n+' peça'+(n>1?'s':'')+' · '+f2(m2)+' m²',R-2,y,10,'normal',MUT,'right');y+=7;
+  for(const r of g){
     const nm=doc.splitTextToSize(T(r.p.name),84);need(nm.length*4.6+(r.cuts.length?5:0)+3);
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...INK);doc.text(nm,M+2,y);
-    const z=sizeOf(r.p);put((z.f==='Retângulo'?'':z.f+' ')+fcm(z.w)+' × '+fcm(z.h)+' cm',100,y,10);put(String(r.qty),148,y,10);put(doc.splitTextToSize(T(r.mat.name),38)[0],160,y,10);
+    const z=sizeOf(r.p);put((z.f==='Retângulo'?'':z.f+' ')+fcm(z.w)+' × '+fcm(z.h)+' cm',100,y,10);put(String(r.qty),R-2,y,10,'normal',INK,'right');
     y+=nm.length*4.6;
     if(r.cuts.length){put('Recortes: '+r.cuts.map(x=>x.name.toLowerCase()+' '+fcm(x.w)+'×'+fcm(x.h)).join(', '),M+4,y,9.5,'normal',MUT);y+=5}
     doc.setDrawColor(232,234,236);doc.setLineWidth(.25);doc.line(M,y-2,R,y-2);y+=3;
+  }
+    y+=4;
   }
   if(pieces().length){try{const d=await drawingPng(),iw=R-M,ih=Math.min(150,iw*d.h/d.w),w2=ih*d.w/d.h;need(ih+12);y+=2;put('Desenho',M,y,12,'bold',TEAL);y+=3;doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y,w2,ih);y+=ih+4}catch(e){}}
   if(S.obs&&S.obs.trim()){need(14);put('Observações',M,y,12,'bold',TEAL);y+=6;for(const l of doc.splitTextToSize(T(S.obs),R-M)){need(5);put(l,M,y,10.5);y+=4.6}}
