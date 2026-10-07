@@ -1533,7 +1533,7 @@ $('#tabbody').addEventListener('input',e=>{
   const t=e.target;if(t.id==='c-busca'){busca=t.value;renderLista();return}
   if(t.id==='c-filtro'){filtro=t.value;renderLista();return}
   if(t.dataset.cfg){const k=t.dataset.cfg;cfg[k]=t.type==='checkbox'?t.checked:t.type==='number'?+t.value:t.value;saveCfg();return}
-  if(t.dataset.c){S[t.dataset.c]=t.value;if(t.dataset.c==='name')$('#projName').value=t.value;save()}
+  if(t.dataset.c){S[t.dataset.c]=t.value;if(t.dataset.c==='name')$('#projName').value=t.value;save();if(t.dataset.c==='status'){flush();renderLista()}}
 });
 
 $('#newProj').onclick=newProj;
