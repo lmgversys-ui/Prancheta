@@ -423,21 +423,88 @@ const CFG0={nome:'Bella Vista',resp:'LEANDRO DE MORAES GARCIA MEi',cnpj:'15.390.
   itens:[{nome:'Cuba inox',preco:250},{nome:'Válvula',preco:25},{nome:'Instalação',preco:300},{nome:'Frete',preco:80}],
   desenho:true,logo:LOGO0,atualizado:0};
 let cfg={...CFG0};try{Object.assign(cfg,JSON.parse(localStorage.getItem(CKEY))||{})}catch(e){}
-let cfgT;function saveCfg(){cfg.atualizado=Date.now();try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}clearTimeout(cfgT);cfgT=setTimeout(()=>db&&db.doc('config/empresa').set({...cfg}).catch(()=>{}),1000)}
+let cfgT;function saveCfg(){cfg.atualizado=Date.now();try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}clearTimeout(cfgT);cfgT=setTimeout(()=>{db&&db.doc('config/empresa').set({...cfg}).catch(()=>{});sbSync()},1000)}
 const localList=()=>{try{return JSON.parse(localStorage.getItem(LKEY))||{}}catch(e){return{}}};
 let db=null,cloud=null,cloudQ=Promise.resolve(),lastSync=0,syncErr='';
+/* ---------- Supabase: login + sync of budgets and company data ---------- */
+// every device keeps its own copy (LKEY); edits go up from a pending list, others come down by server time (mod)
+const SB='https://imttenhjtlfacxogxqvr.supabase.co',SBK='sb_publishable_3W956UmyUDT6pnreUaceEQ_uTv1fr-2';
+const SKEY='prancheta-sb-sessao',PKEY='prancheta-sb-pend',MKEY='prancheta-sb-mod';
+const jget=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},jset=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+let sess=jget(SKEY,null),sbBusy=null,sbAgain=false,sbErr='',sbLast=0;
+async function sbAuth(path,data,tok){
+  const r=await fetch(SB+'/auth/v1/'+path,{method:'POST',headers:{apikey:SBK,'Content-Type':'application/json',...(tok?{Authorization:'Bearer '+tok}:{})},body:JSON.stringify(data)});
+  const o=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(o.msg||o.error_description||o.message||'erro '+r.status);e.auth=true;throw e}return o}
+function keepSess(o){sess={access_token:o.access_token,refresh_token:o.refresh_token,expires_at:o.expires_at||Math.floor(Date.now()/1000)+(o.expires_in||3600),email:o.user?.email||sess?.email,uid:o.user?.id||sess?.uid};jset(SKEY,sess)}
+async function token(){
+  if(sess.expires_at-60<Date.now()/1000){try{keepSess(await sbAuth('token?grant_type=refresh_token',{refresh_token:sess.refresh_token}))}catch(e){if(e.auth)sbSair(true);throw e}}
+  return sess.access_token}
+async function rest(path,opt={}){
+  const r=await fetch(SB+'/rest/v1/'+path,{...opt,headers:{apikey:SBK,Authorization:'Bearer '+await token(),'Content-Type':'application/json',...opt.headers}});
+  if(!r.ok)throw new Error((await r.text()).slice(0,200)||'erro '+r.status);return r.status===204||r.status===201?null:r.json()}
+const pend=()=>jget(PKEY,{});
+function markPend(id){if(!sess)return;const p=pend();p[id]=Date.now();jset(PKEY,p);sbSync()}
+function sbSync(){
+  if(!sess)return;if(sbBusy){sbAgain=true;return sbBusy}
+  sbBusy=(async()=>{try{do{sbAgain=false;await sbPull();await sbPush();await sbCfg()}while(sbAgain&&sess);sbErr='';sbLast=Date.now()}
+    catch(e){sbErr=e.message||'erro'}finally{sbBusy=null;renderSync()}})();
+  return sbBusy}
+async function sbPull(){
+  // look 10 s back so a save that committed late is not skipped; re-reading a row is harmless
+  const since=new Date(new Date(localStorage.getItem(MKEY)||0).getTime()-10000).toISOString();
+  const rows=await rest('orcamentos?select=*&mod=gt.'+encodeURIComponent(since)+'&order=mod.asc&limit=500');
+  if(!rows.length)return;
+  const l=localList(),p=pend();let novoS=null,mudou=false;
+  for(const r of rows){const loc=l[r.id],mine=loc?loc.atualizado:p[r.id];
+    if(p[r.id]&&mine>r.atualizado)continue; // this device has a newer edit (or delete) still to send
+    delete p[r.id];
+    if(r.apagado){if(loc){delete l[r.id];mudou=true}continue}
+    if(!loc||r.atualizado>loc.atualizado){l[r.id]={status:r.status,nome:r.nome,tel:r.tel,end:r.endereco,atualizado:r.atualizado,total:+r.total,m2:+r.m2,estado:JSON.stringify(r.estado)};mudou=true;if(r.id===S.id&&!saveT)novoS=l[r.id]}}
+  try{localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}jset(PKEY,p);localStorage.setItem(MKEY,rows[rows.length-1].mod);
+  if(rows.length===500)sbAgain=true;
+  if(novoS){try{const o=JSON.parse(novoS.estado);if(o.shapes){S=o;undoStack=[];selId=null;multi.clear();try{localStorage.setItem(KEY,novoS.estado)}catch(e){}renderDefaults();renderAll()}}catch(e){}}
+  if(mudou)renderLista()}
+async function sbPush(){
+  const p=pend(),ids=Object.keys(p);if(!ids.length)return;const l=localList();
+  const row=id=>{const b=l[id];return b?{id,nome:b.nome,tel:b.tel,endereco:b.end,status:b.status,total:+b.total||0,m2:+b.m2||0,atualizado:b.atualizado,estado:JSON.parse(b.estado),apagado:false}
+    :{id,nome:null,tel:null,endereco:null,status:null,total:0,m2:0,atualizado:p[id],estado:{},apagado:true}};
+  for(let i=0;i<ids.length;i+=40){const part=ids.slice(i,i+40);
+    await rest('orcamentos',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(part.map(row))});
+    const q=pend();for(const id of part)if(q[id]===p[id])delete q[id];jset(PKEY,q)}}
+async function sbCfg(){
+  const a=(await rest('empresa?select=atualizado'))[0]?.atualizado||0,m=cfg.atualizado||0;
+  if(a>m){const d=(await rest('empresa?select=dados'))[0].dados;cfg={...CFG0,...d,atualizado:a};try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(tab==='clientes')renderTab()}
+  else if(m>a)await rest('empresa',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({user_id:sess.uid,dados:cfg,atualizado:m})})}
+const sbMsg=e=>e instanceof TypeError?'Sem internet agora — tente de novo':/invalid login/i.test(e.message)?'E-mail ou senha incorretos':/already registered|already exists/i.test(e.message)?'Esse e-mail já tem conta — use Entrar':/not confirmed/i.test(e.message)?'Confirme o e-mail pelo link que chegou na sua caixa de entrada':/password/i.test(e.message)?'Senha fraca — use pelo menos 6 caracteres':'Não foi possível entrar: '+e.message;
+async function sbEntrar(novo){
+  const email=$('#sb-email').value.trim(),password=$('#sb-senha').value;
+  if(!email||password.length<6){toast('Informe o e-mail e a senha (mínimo 6 caracteres)');return}
+  try{const o=await sbAuth(novo?'signup':'token?grant_type=password',{email,password});
+    if(!o.access_token){toast('Conta criada — confirme pelo link no seu e-mail e depois toque em Entrar');return}
+    keepSess(o);flush();
+    // first login on this device: send up everything already saved here (newer copies win on each side)
+    const p=pend();for(const id of Object.keys(localList()))p[id]=p[id]||Date.now();jset(PKEY,p);localStorage.removeItem(MKEY);
+    toast('Conectado — sincronizando seus orçamentos');renderTab();await sbSync();renderLista()}
+  catch(e){toast(sbMsg(e))}}
+function sbSair(silencioso){
+  if(sess)fetch(SB+'/auth/v1/logout',{method:'POST',headers:{apikey:SBK,Authorization:'Bearer '+sess.access_token}}).catch(()=>{});
+  sess=null;try{localStorage.removeItem(SKEY);localStorage.removeItem(MKEY)}catch(e){}
+  if(silencioso)toast('Sua sessão expirou — entre de novo em Clientes › Conta na nuvem');if(tab==='clientes')renderTab()}
+setTimeout(()=>sbSync(),300);
+setInterval(()=>{if(sess&&!document.hidden)sbSync()},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)sbSync()});addEventListener('online',()=>sbSync());
 function body(){const c=calc();return{status:S.status||'Rascunho',nome:S.name||'Sem nome',tel:S.tel||'',end:S.end||'',atualizado:Date.now(),total:c.total,m2:c.m2l,estado:JSON.stringify(S)}}
 function saveNow(){
   saveT=null;const b=body();
   try{localStorage.setItem(KEY,JSON.stringify(S));const l=localList();l[S.id]=b;localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}
   pushCloud(S.id,b);
 }
-function pushCloud(id,b){if(!db)return;cloudQ=cloudQ.then(()=>db.doc('orcamentos/'+id).set(b)).then(()=>{lastSync=Date.now();syncErr='';renderSync()},e=>{syncErr=e.code||'erro';renderSync()})}
+function pushCloud(id,b){markPend(id);if(!db)return;cloudQ=cloudQ.then(()=>db.doc('orcamentos/'+id).set(b)).then(()=>{lastSync=Date.now();syncErr='';renderSync()},e=>{syncErr=e.code||'erro';renderSync()})}
 let saveT=null;function save(){clearTimeout(saveT);saveT=setTimeout(saveNow,800)}
 addEventListener('pagehide',()=>flush());document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
 function flush(){if(saveT){clearTimeout(saveT);saveNow()}}
 // every saved budget, newest first: the cloud list when it is available, else this device's list
-function lista(){return(cloud||Object.entries(localList()).map(([id,b])=>({id,...b}))).slice().sort((a,b)=>b.atualizado-a.atualizado)}
+function lista(){return((!sess&&cloud)||Object.entries(localList()).map(([id,b])=>({id,...b}))).slice().sort((a,b)=>b.atualizado-a.atualizado)}
 window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
   db.doc('config/empresa').get().then(x=>{const o=x.exists&&x.data();if(o&&o.atualizado>cfg.atualizado){cfg={...CFG0,...o};try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(tab==='clientes')renderTab()}else if(cfg.atualizado)db.doc('config/empresa').set({...cfg}).catch(()=>{})}).catch(()=>{});
   let first=true;
@@ -1148,6 +1215,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;do
 
 /* ---------- tab sections: icon + title + one-line summary, open/closed remembered ---------- */
 const ICO={
+  cloud:'<path d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8z"/>',
   user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   receipt:'<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   layers:'<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
@@ -1174,7 +1242,8 @@ function sec(id,icon,title,body,open=false,sum=''){
 }
 let busca='',delArm='',filtro='';
 function renderSync(){const el=$('#syncMsg');if(!el)return;
-  el.textContent=syncErr?'Não foi possível salvar na nuvem agora — ficou salvo neste aparelho.':db?(lastSync?'Salvo na nuvem às '+new Date(lastSync).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — aparece no PC e no celular.':'Salvando na nuvem automaticamente.'):'Salvo só neste aparelho. Use "Salvar arquivo" para guardar no Drive.'}
+  if(sess){el.textContent=sbErr?'Sem conexão com a nuvem agora — ficou salvo neste aparelho e vai sozinho quando a internet voltar.':sbLast?'Salvo na nuvem às '+new Date(sbLast).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — aparece no PC e no celular.':'Conectando à nuvem…';return}
+  el.textContent=!db?'Salvo só neste aparelho. Entre em "Conta na nuvem" para ver no PC e no celular.':syncErr?'Não foi possível salvar na nuvem agora — ficou salvo neste aparelho.':db?(lastSync?'Salvo na nuvem às '+new Date(lastSync).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — aparece no PC e no celular.':'Salvando na nuvem automaticamente.'):''}
 function renderLista(){const el=$('#c-lista');if(!el)return;
   const q=busca.trim().toLowerCase(),L=lista().filter(b=>(!q||(b.nome+' '+b.end).toLowerCase().includes(q))&&(!filtro||(b.status||'Rascunho')===filtro));
   el.innerHTML=L.length?`<table><tbody>${L.map(b=>`<tr class="row${b.id===S.id?' on':''}" data-open="${esc(b.id)}"><td>${esc(b.nome)}<br><small style="color:var(--muted)"><span class="chip" data-s="${esc(b.status||'Rascunho')}">${esc(b.status||'Rascunho')}</span>${esc(b.end||b.tel||'')}${b.end||b.tel?' · ':''}${new Date(b.atualizado).toLocaleDateString('pt-BR')}</small></td><td class="n">${money(b.total)}</td><td style="width:1%"><button class="x${delArm===b.id?' warn':''}" data-delp="${esc(b.id)}" aria-label="Apagar orçamento de ${esc(b.nome)}">${delArm===b.id?'Apagar?':'✕'}</button></td></tr>`).join('')}</tbody></table>`:`<p class="empty">${q?'Nenhum orçamento com esse nome.':'Nenhum orçamento salvo ainda. Tudo o que você desenha é salvo sozinho aqui.'}</p>`}
@@ -1193,6 +1262,8 @@ function renderTab(){
       <label class="full">Informações adicionais (sai no PDF)<textarea id="c-obs" data-c="obs" rows="3" placeholder="Ex.: SEM INSTALAÇÃO / PRAZO: 40 dias úteis">${esc(S.obs)}</textarea></label>
     </div><div class="actions"><button class="btn primary" id="c-new">Novo orçamento</button><button class="btn" id="c-dup">Duplicar orçamento</button></div>`,true,S.num?'nº '+esc(S.num):'')
     +sec('c-salvos','folder','Orçamentos salvos',`<input class="search" id="c-busca" type="search" placeholder="Buscar por cliente ou endereço" value="${esc(busca)}" aria-label="Buscar orçamento"><select id="c-filtro" aria-label="Filtrar por situação" style="width:100%;margin-bottom:8px"><option value="">Todas as situações</option>${STATUS.map(v=>`<option${filtro===v?' selected':''}>${v}</option>`).join('')}</select><div id="c-lista"></div><p class="cutlist" id="syncMsg"></p>`,true,nSalvos+' '+(nSalvos===1?'orçamento':'orçamentos'))
+    +sec('c-nuvem','cloud','Conta na nuvem',sess?`<p class="hint" style="margin-bottom:10px">Conectado como <b>${esc(sess.email)}</b>. Orçamentos e dados da empresa ficam iguais em todos os aparelhos onde você entrar com esta conta.</p><div class="actions" style="margin-top:0"><button class="btn" id="sb-sync">Sincronizar agora</button><button class="btn" id="sb-out">Sair desta conta</button></div>`
+      :`<p class="hint" style="margin-bottom:10px">Entre para ver os mesmos orçamentos no PC e no celular.</p><div class="fields"><label>E-mail<input id="sb-email" type="email" autocomplete="username" inputmode="email"></label><label>Senha<input id="sb-senha" type="password" autocomplete="current-password"></label></div><div class="actions"><button class="btn primary" id="sb-in">Entrar</button><button class="btn" id="sb-new">Criar conta</button></div>`,!sess,sess?'conectado':'desconectado')
     +sec('c-arq','backup','Arquivos e backup',`<p class="hint" style="margin-bottom:10px">Guarde uma cópia no Google Drive de vez em quando.</p><div class="actions" style="margin-top:0"><button class="btn" id="c-save">Salvar este orçamento</button><button class="btn" id="c-all">Baixar cópia de todos</button><button class="btn" id="c-open">Abrir arquivo</button></div>`)
     +sec('c-emp','building','Dados da empresa',`<div class="fields">
       <label class="full">Logo${cfg.logo?`<img class="logoprev" src="${cfg.logo}" alt="Logo atual">`:''}<input id="cfg-logo" type="file" accept="image/*"></label>
@@ -1511,7 +1582,7 @@ function newProj(){
   renderDefaults();renderAll();fit();toast('Novo orçamento — o anterior ficou salvo em Clientes');$('#projName').focus();
 }
 async function delProj(id){
-  const l=localList();delete l[id];try{localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}
+  const l=localList();delete l[id];try{localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}markPend(id);
   if(db)cloudQ=cloudQ.then(()=>db.doc('orcamentos/'+id).delete()).catch(()=>{});
   if(cloud)cloud=cloud.filter(b=>b.id!==id);
   if(id===S.id)newProj();else renderLista();
@@ -1531,6 +1602,10 @@ $('#tabbody').addEventListener('click',e=>{
   const t=e.target;
   if(t.closest('#c-new'))return newProj();
   if(t.closest('#c-dup'))return dupProj();
+  if(t.closest('#sb-in'))return sbEntrar(false);
+  if(t.closest('#sb-new'))return sbEntrar(true);
+  if(t.closest('#sb-out'))return sbSair();
+  if(t.closest('#sb-sync')){sbSync();return toast('Sincronizando…')}
   if(t.closest('#c-save')){flush();return saveFile('Orçamento '+(S.name||'sem nome')+' '+today(),JSON.stringify({app:'prancheta',id:S.id,...body()}))}
   if(t.closest('#c-open'))return picker.click();
   if(t.closest('#c-all'))return saveFile('Marmofácil backup '+today(),JSON.stringify({app:'prancheta',orcamentos:lista()}));
