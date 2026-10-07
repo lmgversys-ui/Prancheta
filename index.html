@@ -127,7 +127,6 @@ select:focus,input:focus{outline:2px solid var(--accent);outline-offset:0;border
 /* each tab has its own colour: a dot on the tab, the tint behind its content */
 .tab{border-radius:10px 10px 0 0;white-space:nowrap;padding-inline:8px;font-size:14px}
 .tabs{padding-inline:8px;gap:0;overflow-x:auto;scrollbar-width:none;flex:none}
-.tab::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--tc);margin-right:6px;vertical-align:1px}
 .tab[data-tab=clientes],.side[data-tab=clientes]{--tc:#1A63A0;--tb:#EDF4FB}
 .tab[data-tab=resumo],.side[data-tab=resumo]{--tc:#1E7A4A;--tb:#EDF7F1}
 .tab[data-tab=pecas],.side[data-tab=pecas]{--tc:#A86400;--tb:#FCF3E4}
@@ -166,6 +165,25 @@ tr.row.on td{background:var(--accent-soft)}
 .addform .btn{grid-column:1/-1;justify-content:center}
 .foot{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap;position:sticky;bottom:0;background:var(--panel)}
 .empty{color:var(--muted);font-size:13px}
+.tabbody{gap:0;padding-top:4px}
+.sec2{border-bottom:1px solid color-mix(in srgb,var(--tc) 18%,var(--line))}
+.sec2>summary{display:flex;align-items:center;gap:10px;padding:12px 2px;cursor:pointer;list-style:none;border-radius:10px}
+.sec2>summary::-webkit-details-marker{display:none}
+.sec2>summary:focus-visible{outline:2px solid var(--tc)}
+.sec2 .ic{width:32px;height:32px;flex:none;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--tc) 15%,var(--panel));color:var(--tc)}
+.sec2 .ic svg,.sec2 .chev svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.sec2 .st{font-weight:600;font-size:15px;min-width:0}
+.sec2 .sum{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.sec2 .chev{color:var(--muted);display:grid;transition:transform .15s}
+.sec2:not(:has(.sum)) .chev{margin-left:auto}
+.sec2[open] .chev{transform:rotate(180deg)}
+.sec2 .sb{padding:2px 2px 16px}
+.grand{margin:8px 0 6px}
+.tab svg,.foot .btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;font-size:13px;padding:8px 2px}
+.tab svg{color:var(--tc)}
+@media (max-width:900px){.tab{font-size:12.5px}.tabs{padding-inline:4px}}
+@media (prefers-reduced-motion:reduce){.sec2 .chev{transition:none}}
 textarea{background:var(--panel2);border:1px solid transparent;border-radius:9px;padding:7px 9px;width:100%;font:inherit;font-size:14px;color:var(--ink);resize:vertical;text-transform:none;letter-spacing:0}
 textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 details.blk>summary{cursor:pointer;font-family:var(--display);font-weight:600;font-size:15px;padding:4px 0}
@@ -317,17 +335,17 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
       <section class="sec" id="insp"></section>
       <section class="sec" id="mobDefs"></section>
       <div class="tabs" role="tablist">
-        <button class="tab" role="tab" data-tab="clientes" aria-selected="false">Clientes</button>
-        <button class="tab" role="tab" data-tab="resumo" aria-selected="true">Resumo</button>
-        <button class="tab" role="tab" data-tab="pecas" aria-selected="false">Peças</button>
-        <button class="tab" role="tab" data-tab="materiais" aria-selected="false">Materiais</button>
+        <button class="tab" role="tab" data-tab="clientes" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Clientes</button>
+        <button class="tab" role="tab" data-tab="resumo" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Resumo</button>
+        <button class="tab" role="tab" data-tab="pecas" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg>Peças</button>
+        <button class="tab" role="tab" data-tab="materiais" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12l3 6-9 12L3 9z"/><path d="M3 9h18M12 21 8.5 9 11 3M12 21l3.5-12L13 3"/></svg>Materiais</button>
       </div>
       <div class="tabbody" id="tabbody"></div>
       <div class="foot">
-        <button class="btn primary" id="copyTxt">Copiar orçamento</button>
-        <button class="btn" id="copyCsv">Copiar planilha</button>
-        <button class="btn" id="pdfBtn">Baixar PDF</button>
-        <button class="btn" id="newProj">Novo orçamento</button>
+        <button class="btn primary" id="copyTxt"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>Copiar orçamento</button>
+        <button class="btn" id="copyCsv"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>Copiar planilha</button>
+        <button class="btn" id="pdfBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9 15l3 3 3-3"/></svg>Baixar PDF</button>
+        <button class="btn" id="newProj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Novo orçamento</button>
       </div>
     </aside>
   </div>
@@ -1128,6 +1146,32 @@ $('#defType').addEventListener('change',e=>{S.defType=e.target.value;save()});
 $('#defMat').addEventListener('change',e=>{S.defMat=e.target.value;save()});
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===b));renderTab()});
 
+/* ---------- tab sections: icon + title + one-line summary, open/closed remembered ---------- */
+const ICO={
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  receipt:'<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  layers:'<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+  gem:'<path d="M6 3h12l3 6-9 12L3 9z"/><path d="M3 9h18M12 21 8.5 9 11 3M12 21l3.5-12L13 3"/>',
+  edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/>',
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  backup:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
+  building:'<path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M16 9h2a2 2 0 0 1 2 2v10M2 21h20M8 7h4M8 11h4M8 15h4"/>',
+  chart:'<path d="M5 20V11M11 20V5M17 20v-6M3 20h18"/>',
+  cut:'<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.2 8.2 20 20M8.2 15.8 20 4"/>',
+  grid:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h10M13 4v16"/>',
+  sliders:'<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+  addbox:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/>',
+  list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  swap:'<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
+  tag:'<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
+  chev:'<path d="m6 9 6 6 6-6"/>'
+};
+const ico=n=>`<svg viewBox="0 0 24 24" aria-hidden="true">${ICO[n]}</svg>`;
+let secOpen={};try{secOpen=JSON.parse(localStorage.getItem('prancheta-secoes'))||{}}catch(e){}
+function sec(id,icon,title,body,open=false,sum=''){
+  const o=id in secOpen?secOpen[id]:open;
+  return`<details class="sec2" data-sec="${id}"${o?' open':''}><summary><span class="ic">${ico(icon)}</span><span class="st">${title}</span>${sum?`<span class="sum">${sum}</span>`:''}<span class="chev">${ico('chev')}</span></summary><div class="sb">${body}</div></details>`;
+}
 let busca='',delArm='',filtro='';
 function renderSync(){const el=$('#syncMsg');if(!el)return;
   el.textContent=syncErr?'Não foi possível salvar na nuvem agora — ficou salvo neste aparelho.':db?(lastSync?'Salvo na nuvem às '+new Date(lastSync).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — aparece no PC e no celular.':'Salvando na nuvem automaticamente.'):'Salvo só neste aparelho. Use "Salvar arquivo" para guardar no Drive.'}
@@ -1140,17 +1184,17 @@ function renderTab(){
   // keep focus when re-rendering while typing in the tab
   const act=document.activeElement;if(act&&el.contains(act)&&act.matches('input,select'))return;
   if(tab==='clientes'){
-    el.innerHTML=`<div class="blk"><h3>Este orçamento</h3><div class="fields">
+    const nSalvos=lista().length;
+    el.innerHTML=sec('c-este','edit','Este orçamento',`<div class="fields">
       <label class="full">Cliente / obra<input id="c-nome" data-c="name" type="text" value="${esc(S.name)}" placeholder="Ex.: Maria — Cozinha Apto 302"></label>
       <label>Telefone<input id="c-tel" data-c="tel" type="tel" inputmode="tel" value="${esc(S.tel)}"></label>
       <label>Endereço da obra<input id="c-end" data-c="end" type="text" value="${esc(S.end)}"></label>
       <label>Situação<select id="c-status" data-c="status">${STATUS.map(v=>`<option${(S.status||'Rascunho')===v?' selected':''}>${v}</option>`).join('')}</select></label>
       <label class="full">Informações adicionais (sai no PDF)<textarea id="c-obs" data-c="obs" rows="3" placeholder="Ex.: SEM INSTALAÇÃO / PRAZO: 40 dias úteis">${esc(S.obs)}</textarea></label>
-    </div><p class="cutlist" id="syncMsg"></p>
-    <div class="actions"><button class="btn primary" id="c-new">Novo orçamento</button><button class="btn" id="c-dup">Duplicar orçamento</button><button class="btn" id="c-save">Salvar arquivo</button><button class="btn" id="c-open">Abrir arquivo</button></div></div>
-    <div class="blk"><h3>Orçamentos salvos</h3><input class="search" id="c-busca" type="search" placeholder="Buscar por cliente ou endereço" value="${esc(busca)}" aria-label="Buscar orçamento"><select id="c-filtro" aria-label="Filtrar por situação" style="width:100%;margin-bottom:8px"><option value="">Todas as situações</option>${STATUS.map(v=>`<option${filtro===v?' selected':''}>${v}</option>`).join('')}</select><div id="c-lista"></div>
-    <div class="actions"><button class="btn" id="c-all">Baixar cópia de todos</button></div></div>
-    <details class="blk"><summary>Dados da empresa (cabeçalho do PDF)</summary><div class="fields">
+    </div><div class="actions"><button class="btn primary" id="c-new">Novo orçamento</button><button class="btn" id="c-dup">Duplicar orçamento</button></div>`,true,S.num?'nº '+esc(S.num):'')
+    +sec('c-salvos','folder','Orçamentos salvos',`<input class="search" id="c-busca" type="search" placeholder="Buscar por cliente ou endereço" value="${esc(busca)}" aria-label="Buscar orçamento"><select id="c-filtro" aria-label="Filtrar por situação" style="width:100%;margin-bottom:8px"><option value="">Todas as situações</option>${STATUS.map(v=>`<option${filtro===v?' selected':''}>${v}</option>`).join('')}</select><div id="c-lista"></div><p class="cutlist" id="syncMsg"></p>`,true,nSalvos+' '+(nSalvos===1?'orçamento':'orçamentos'))
+    +sec('c-arq','backup','Arquivos e backup',`<p class="hint" style="margin-bottom:10px">Guarde uma cópia no Google Drive de vez em quando.</p><div class="actions" style="margin-top:0"><button class="btn" id="c-save">Salvar este orçamento</button><button class="btn" id="c-all">Baixar cópia de todos</button><button class="btn" id="c-open">Abrir arquivo</button></div>`)
+    +sec('c-emp','building','Dados da empresa',`<div class="fields">
       <label class="full">Logo${cfg.logo?`<img class="logoprev" src="${cfg.logo}" alt="Logo atual">`:''}<input id="cfg-logo" type="file" accept="image/*"></label>
       ${[['nome','Nome da empresa'],['resp','Responsável'],['cnpj','CNPJ'],['email','E-mail'],['whats','WhatsApp'],['tel','Telefone'],['insta','Instagram'],['face','Facebook'],['pix','Chave PIX']].map(([k,l])=>`<label>${l}<input id="cfg-${k}" data-cfg="${k}" type="text" value="${esc(cfg[k])}"></label>`).join('')}
       <label>Próximo nº de orçamento<input id="cfg-seq" data-cfg="seq" type="number" min="1" step="1" value="${esc(cfg.seq)}"></label>
@@ -1158,10 +1202,11 @@ function renderTab(){
       <label class="full">Meios de pagamento<textarea id="cfg-pagamento" data-cfg="pagamento" rows="2">${esc(cfg.pagamento)}</textarea></label>
       <label class="full">Observações fixas (todo PDF)<textarea id="cfg-obs" data-cfg="obs" rows="6">${esc(cfg.obs)}</textarea></label>
       <label class="check" style="flex-direction:row;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink)"><input id="cfg-desenho" data-cfg="desenho" type="checkbox"${cfg.desenho?' checked':''}> Incluir o desenho das peças no PDF</label>
-    </div></details>`;
+    </div>`,false,esc(cfg.nome));
     renderLista();renderSync();return;
   }
   if(tab==='resumo'){
+    const P=plano(),nCh=P.reduce((a,p)=>a+p.sheets.length,0),nPc=c.types.reduce((a,t)=>a+t.n,0);
     el.innerHTML=`
     <div class="grand">
       <span>Área líquida</span><b>${f2(c.m2)} m²</b>
@@ -1169,35 +1214,34 @@ function renderTab(){
       <span>Pedra</span><b>${money(c.matTotal)}</b>
       <span>Recortes (${c.nCuts})</span><b>${money(c.cutTotal)}</b>
       <span style="align-self:center">Total do orçamento</span><b class="t">${money(c.total)}</b>
-    </div>
-    <div class="blk"><h3>Por item</h3>${c.types.length?`<table><thead><tr><th>Item</th><th class="n">Pçs</th><th class="n">m²</th><th class="n">ml</th></tr></thead><tbody>
+    </div>`
+    +sec('r-item','chart','Por item',c.types.length?`<table><thead><tr><th>Item</th><th class="n">Pçs</th><th class="n">m²</th><th class="n">ml</th></tr></thead><tbody>
       ${c.types.map(t=>`<tr><td>${esc(t.type)}</td><td class="n">${t.n}</td><td class="n">${f2(t.m2)}</td><td class="n">${LINEAR.has(t.type)?f2(t.ml):'—'}</td></tr>`).join('')}
-      </tbody><tfoot><tr><td>Total</td><td class="n">${c.types.reduce((a,t)=>a+t.n,0)}</td><td class="n">${f2(c.m2)}</td><td></td></tr></tfoot></table>`:'<p class="empty">Nenhuma peça desenhada ainda.</p>'}</div>
-    <div class="blk"><h3>Por material</h3>${c.mats.length?`<table><thead><tr><th>Material</th><th class="n">m²</th><th class="n">R$/m²</th><th class="n">Subtotal</th></tr></thead><tbody>
+      </tbody><tfoot><tr><td>Total</td><td class="n">${nPc}</td><td class="n">${f2(c.m2)}</td><td></td></tr></tfoot></table>`:'<p class="empty">Nenhuma peça desenhada ainda.</p>',false,nPc+' peça'+(nPc===1?'':'s'))
+    +sec('r-mat','gem','Por pedra',c.mats.length?`<table><thead><tr><th>Pedra</th><th class="n">m²</th><th class="n">R$/m²</th><th class="n">Subtotal</th></tr></thead><tbody>
       ${c.mats.map(m=>`<tr><td><span class="sw" style="background:${m.mat.color}"></span>${esc(m.mat.name)}</td><td class="n">${f2(m.m2l)}</td><td class="n">${f2(m.mat.price)}</td><td class="n">${f2(m.sub)}</td></tr>`).join('')}
-      </tbody></table>`:'<p class="empty">—</p>'}</div>
-    <div class="blk"><h3>Recortes</h3>${c.nCuts?`<table><tbody>${Object.entries(c.cutCount).map(([n,q])=>`<tr><td>${esc(n)}</td><td class="n">${q} un</td><td class="n">${f2(q*(+S.cutPrice||0))}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">Nenhum recorte. Use <kbd>C</kbd> para marcar cuba ou cooktop.</p>'}</div>
-    <div class="blk"><h3>Plano de corte</h3>${planoHtml()}</div>
-    <div class="blk"><h3>Ajustes</h3><div class="opts fields">
+      </tbody></table>`:'<p class="empty">—</p>',false,c.mats.length+' pedra'+(c.mats.length===1?'':'s'))
+    +sec('r-cut','cut','Recortes',c.nCuts?`<table><tbody>${Object.entries(c.cutCount).map(([n,q])=>`<tr><td>${esc(n)}</td><td class="n">${q} un</td><td class="n">${f2(q*(+S.cutPrice||0))}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">Nenhum recorte. Use a ferramenta de recorte para marcar cuba ou cooktop.</p>',false,c.nCuts+' un')
+    +sec('r-plano','grid','Plano de corte',planoHtml(),false,nCh?nCh+' chapa'+(nCh>1?'s':''):'')
+    +sec('r-aj','sliders','Ajustes',`<div class="opts fields">
       <label>Perda / sobra (%)<input id="o-loss" data-o="lossPct" type="number" min="0" step="1" value="${S.lossPct}"></label>
       <label>Valor por recorte (R$)<input id="o-cut" data-o="cutPrice" type="number" min="0" step="5" value="${S.cutPrice}"></label>
       <label>Grade / ímã<select id="o-snap" data-o="snap">${[0.5,1,5,10].map(v=>`<option value="${v}"${+S.snap===v?' selected':''}>${fcm(v)} cm</option>`).join('')}</select></label>
       <label>Chapa (cm)<span style="display:flex;gap:4px;align-items:center"><input id="o-chW" data-o="chapaW" type="number" min="10" step="1" value="${S.chapaW||300}" aria-label="Comprimento da chapa"> × <input id="o-chH" data-o="chapaH" type="number" min="10" step="1" value="${S.chapaH||180}" aria-label="Largura da chapa"></span></label>
       <label class="check" style="flex-direction:row;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink)"><input id="o-disc" data-o="discountCuts" type="checkbox"${S.discountCuts?' checked':''}> Descontar recortes da área</label>
-    </div></div>`;
+    </div>`,false,'perda '+fcm(+S.lossPct||0)+'%');
   }else if(tab==='pecas'){
-    el.innerHTML=`
-    <div class="blk"><h3>Adicionar por medida</h3>
+    el.innerHTML=sec('p-add','addbox','Adicionar por medida',`
       <form class="addform" id="addForm">
         <label>Item<select id="a-type">${typeOpts(S.defType)}</select></label>
         <label>Compr. cm<input id="a-w" type="number" min="1" step="0.5" required placeholder="200"></label>
         <label>Larg. cm<input id="a-h" type="number" min="1" step="0.5" required placeholder="60"></label>
         <label>Qtd<input id="a-q" type="number" min="1" step="1" value="1"></label>
         <button class="btn primary" type="submit">Adicionar peça</button>
-      </form></div>
-    <div class="blk"><h3>Lista de peças</h3>${c.rows.length?`<div style="overflow-x:auto"><table><thead><tr><th>Peça</th><th>Medidas</th><th class="n">Qtd</th><th class="n">m²</th></tr></thead><tbody>
+      </form>`,false)
+    +sec('p-lista','list','Lista de peças',c.rows.length?`<div style="overflow-x:auto"><table><thead><tr><th>Peça</th><th>Medidas</th><th class="n">Qtd</th><th class="n">m²</th></tr></thead><tbody>
       ${c.rows.map(r=>{return`<tr class="row${r.p.id===selId?' on':''}" data-id="${r.p.id}"><td><span class="sw" style="background:${r.mat.color}"></span>${esc(r.p.name)}<br><small style="color:var(--muted)">${esc(r.p.type)} · ${esc(r.mat.name)}${r.cuts.length?` · ${r.cuts.length} recorte${r.cuts.length>1?'s':''}`:''}</small></td><td style="font-family:var(--mono);font-size:12px;white-space:nowrap">${(z=>`${z.f==='Retângulo'?'':z.f+' '}${fcm(z.w)}×${fcm(z.h)}`)(sizeOf(r.p))}</td><td class="n">${r.qty}</td><td class="n">${f2(r.m2)}</td></tr>`}).join('')}
-      </tbody></table></div>`:'<p class="empty">Nenhuma peça ainda.</p>'}</div>`;
+      </tbody></table></div>`:'<p class="empty">Nenhuma peça ainda. Desenhe no quadro ou use "Adicionar por medida".</p>',true,c.rows.length+' peça'+(c.rows.length===1?'':'s'));
     $('#addForm').onsubmit=ev=>{ev.preventDefault();const w=parseFloat($('#a-w').value),h=parseFloat($('#a-h').value),q=parseInt($('#a-q').value)||1,type=$('#a-type').value;if(!(w>0&&h>0))return;
       pushUndo();let x0=0,y=0;if(pieces().length){let X=-1e9,Y0=1e9;for(const s of S.shapes){const b=bbox(s);X=Math.max(X,b.x1);Y0=Math.min(Y0,b.y0)}x0=r1(X+40);y=r1(Y0)}
       const same=pieces().filter(s=>s.kind==='rect'&&Math.abs(s.w-w)<.01);
@@ -1206,14 +1250,13 @@ function renderTab(){
       const s={id:uid(),kind:'rect',name:`${type} ${n}`,type,material:S.defMat,qty:q,x:x0,y,w:r1(w),h:r1(h)};S.shapes.push(s);selId=s.id;
       renderAll();save();fit();toast(`${s.name}: ${f2(w*h/1e4*q)} m²`);};
   }else{
-    el.innerHTML=`<div class="blk"><h3>Trocar a pedra do projeto</h3><div class="genlen" style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);font-size:13px"><select id="allMat" style="flex:1">${matOpts(S.defMat)}</select><button class="btn primary" id="allMatBtn">Aplicar em todas as peças</button></div></div>
-    <div class="blk"><h3>Materiais e preço por m²</h3><div style="display:flex;flex-direction:column;gap:8px">
+    el.innerHTML=sec('m-pedras','gem','Pedras e preço por m²',`<div style="display:flex;flex-direction:column;gap:8px">
       ${S.materials.map(m=>`<div class="mat" data-m="${m.id}"><input id="mc-${m.id}" type="color" data-mf="color" value="${m.color}" aria-label="Cor"><input id="mn-${m.id}" type="text" data-mf="name" value="${esc(m.name)}" aria-label="Nome do material"><input id="mp-${m.id}" type="number" data-mf="price" min="0" step="10" value="${m.price}" aria-label="Preço por m²"><button class="x" data-rm="${m.id}" aria-label="Remover material">✕</button></div>`).join('')}
-      </div><div class="actions"><button class="btn" id="addMat">+ Material</button></div>
-      <p class="hint" style="margin-top:10px">Os preços do exemplo são ilustrativos — troque pelos da sua tabela.</p></div>
-    <div class="blk"><h3>Itens e serviços com preço fixo</h3><p class="hint" style="margin-bottom:8px">Cubas, válvulas, instalação, frete… Entram no PDF pela tela de revisão.</p><div style="display:flex;flex-direction:column;gap:8px">
+      </div><div class="actions"><button class="btn" id="addMat">+ Pedra</button></div>`,true,S.materials.length+' pedra'+(S.materials.length===1?'':'s'))
+    +sec('m-trocar','swap','Trocar a pedra de todas as peças',`<div class="genlen" style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);font-size:13px"><select id="allMat" style="flex:1">${matOpts(S.defMat)}</select><button class="btn primary" id="allMatBtn">Aplicar</button></div>`,false)
+    +sec('m-itens','tag','Itens com preço fixo',`<p class="hint" style="margin-bottom:8px">Cubas, válvulas, instalação, frete… Entram no PDF pela tela de revisão.</p><div style="display:flex;flex-direction:column;gap:8px">
       ${(cfg.itens||[]).map((it,i)=>`<div class="it" data-it="${i}"><input id="it-n-${i}" type="text" data-itf="nome" value="${esc(it.nome)}" aria-label="Nome do item"><input id="it-p-${i}" type="number" data-itf="preco" min="0" step="5" value="${it.preco}" aria-label="Preço"><button class="x" data-itrm="${i}" aria-label="Remover item">✕</button></div>`).join('')}
-      </div><div class="actions"><button class="btn" id="addIt">+ Item</button></div></div>`;
+      </div><div class="actions"><button class="btn" id="addIt">+ Item</button></div>`,false,(cfg.itens||[]).length+' itens');
     $('#allMatBtn').onclick=()=>{const id=$('#allMat').value;pushUndo();for(const k of pieces())k.material=id;S.defMat=id;renderDefaults();renderAll();save();toast('Todas as peças agora em '+(S.materials.find(m=>m.id===id)?.name||''))};
     $('#addMat').onclick=()=>{pushUndo();S.materials.push({id:uid(),name:'Novo material',color:'#9C8F7E',price:0});renderAll();save()};
   }
@@ -1536,6 +1579,7 @@ $('#tabbody').addEventListener('change',async e=>{
     const cv=document.createElement('canvas');cv.width=Math.round(img.naturalWidth*r);cv.height=Math.round(img.naturalHeight*r);const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);
     cfg.logo=cv.toDataURL('image/jpeg',.88);saveCfg();renderTab();toast('Logo atualizado')}catch(_){toast('Não foi possível ler essa imagem')}
 });
+$('#tabbody').addEventListener('toggle',e=>{const d=e.target;if(d.dataset&&d.dataset.sec){secOpen[d.dataset.sec]=d.open;try{localStorage.setItem('prancheta-secoes',JSON.stringify(secOpen))}catch(_){}}},true);
 $('#tabbody').addEventListener('input',e=>{
   const t=e.target;if(t.id==='c-busca'){busca=t.value;renderLista();return}
   if(t.id==='c-filtro'){filtro=t.value;renderLista();return}
