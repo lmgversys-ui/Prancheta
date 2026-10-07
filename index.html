@@ -190,6 +190,16 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
 .rv .x:hover{color:var(--cut);background:var(--panel2)}
 .rv small{grid-column:1/-1;color:var(--muted);font-size:12px}
 @media (max-width:600px){.rv textarea{grid-column:1/3}.rv .price{grid-row:2;grid-column:2}.rv .mat{grid-row:2}}
+.chip{display:inline-block;font-size:11.5px;line-height:1.5;padding:0 7px;border-radius:999px;background:var(--panel2);color:var(--muted);margin-right:6px}
+.chip[data-s="Enviado"]{background:#E4EEF7;color:#1A63A0}.chip[data-s="Aprovado"]{background:#E3F4EA;color:#1E7A4A}.chip[data-s="Em produção"]{background:#FCF1DE;color:#94580A}
+.chip[data-s="Entregue"]{background:#DFF0F2;color:#0E6A70}.chip[data-s="Perdido"]{background:#FBE6E2;color:#A23A26}
+.rvpay{margin-top:12px;grid-template-columns:1fr 1fr 1fr}
+.rvpay .gen{display:flex;background:var(--panel2);border-radius:9px}
+.rvpay .gen input{flex:1;width:0;border:0;background:transparent;padding:7px 9px;text-align:left}
+.rvpay .gen select{border:0;background:transparent;width:auto}
+@media (max-width:600px){.rvpay{grid-template-columns:1fr 1fr}.rvpay label:first-child{grid-column:1/-1}}
+.it{display:grid;grid-template-columns:1fr 100px 30px;gap:6px;align-items:center}
+.it .x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:16px;border-radius:6px;height:30px}
 .rvtotal{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding:12px 14px;border-radius:12px;background:var(--panel2)}
 .rvtotal b{font-size:22px;color:var(--good)}
 
@@ -328,8 +338,14 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
   <p class="hint">Ajuste a descrição, a pedra e o valor de cada item. Fica salvo neste orçamento.</p>
   <div id="rvRows"></div>
   <div class="actions"><button class="btn" id="rvAdd">+ Adicionar item</button><button class="btn" id="rvReset">Voltar aos valores do desenho</button></div>
-  <div class="rvtotal"><span>Total do PDF</span><b id="rvTotal"></b></div>
-  <div class="actions" style="justify-content:flex-end"><button class="btn" id="rvCancel">Cancelar</button><button class="btn primary" id="rvGo">Gerar PDF</button></div>
+  <div class="actions"><select id="rvItem" aria-label="Adicionar item da tabela" style="flex:1"></select></div>
+  <div class="fields rvpay">
+    <label>Desconto<span class="gen"><input id="rvDesc" type="text" inputmode="decimal" placeholder="0"><select id="rvDescT" aria-label="Tipo de desconto"><option>R$</option><option>%</option></select></span></label>
+    <label>Entrada (R$)<input id="rvEnt" type="text" inputmode="decimal" placeholder="0"></label>
+    <label>Parcelas do restante<input id="rvParc" type="number" min="1" step="1" placeholder="1"></label>
+  </div>
+  <div class="rvtotal"><span id="rvSub">Total do PDF</span><b id="rvTotal"></b></div>
+  <div class="actions" style="justify-content:flex-end"><button class="btn" id="rvOs">OS para oficina (sem preços)</button><button class="btn" id="rvCancel">Cancelar</button><button class="btn primary" id="rvGo">Gerar PDF</button></div>
 </div></div>
 
 <script>
@@ -386,12 +402,13 @@ const LOGO0='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJ
 const CFG0={nome:'Bella Vista',resp:'LEANDRO DE MORAES GARCIA MEi',cnpj:'15.390.991/0001-33',email:'bellavistamarmores@gmail.com',whats:'+55 (14) 99856-5358',tel:'14 998565358',insta:'bellavistamarmoraria',face:'bellavistamarmoresegranitos',seq:127,validade:7,
   pagamento:'Transferência bancária, dinheiro, cheque, cartão de crédito, cartão de débito ou pix.',pix:'bellavistamarmores@gmail.com',
   obs:'ATENÇÃO AS OBSERVAÇÕES:\n1- Mármores e Granitos por natureza, estão sujeitos a variações de cores e tonalidades, desenhos e veios, não podendo ser devolvidos por este motivo.\n\n2- Fica estipulado em comum acordo que uma vez aprovado o orçamento, depois de elaborado o pedido, será retido 40% (Quarenta por cento) do valor do pedido em caso de desistência.',
+  itens:[{nome:'Cuba inox',preco:250},{nome:'Válvula',preco:25},{nome:'Instalação',preco:300},{nome:'Frete',preco:80}],
   desenho:true,logo:LOGO0,atualizado:0};
 let cfg={...CFG0};try{Object.assign(cfg,JSON.parse(localStorage.getItem(CKEY))||{})}catch(e){}
 let cfgT;function saveCfg(){cfg.atualizado=Date.now();try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}clearTimeout(cfgT);cfgT=setTimeout(()=>db&&db.doc('config/empresa').set({...cfg}).catch(()=>{}),1000)}
 const localList=()=>{try{return JSON.parse(localStorage.getItem(LKEY))||{}}catch(e){return{}}};
 let db=null,cloud=null,cloudQ=Promise.resolve(),lastSync=0,syncErr='';
-function body(){const c=calc();return{nome:S.name||'Sem nome',tel:S.tel||'',end:S.end||'',atualizado:Date.now(),total:c.total,m2:c.m2l,estado:JSON.stringify(S)}}
+function body(){const c=calc();return{status:S.status||'Rascunho',nome:S.name||'Sem nome',tel:S.tel||'',end:S.end||'',atualizado:Date.now(),total:c.total,m2:c.m2l,estado:JSON.stringify(S)}}
 function saveNow(){
   saveT=null;const b=body();
   try{localStorage.setItem(KEY,JSON.stringify(S));const l=localList();l[S.id]=b;localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}
@@ -415,7 +432,7 @@ window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
     renderLista();renderSync()},()=>{cloud=null;db=null;renderSync()});
 });
 // empty budget that keeps the stones, prices and settings of k
-function blankFrom(k){return{...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:k.materials,defMat:k.materials[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep}}
+function blankFrom(k){return{...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:k.materials,defMat:k.materials[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,chapaW:k.chapaW,chapaH:k.chapaH,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep}}
 let S=load();S=S?blankFrom(S):sample();
 let view={x:-40,y:-40,scale:2};
 let tool='select',selId=null,tab=S.shapes.length?'resumo':'clientes';
@@ -1111,12 +1128,12 @@ $('#defType').addEventListener('change',e=>{S.defType=e.target.value;save()});
 $('#defMat').addEventListener('change',e=>{S.defMat=e.target.value;save()});
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===b));renderTab()});
 
-let busca='',delArm='';
+let busca='',delArm='',filtro='';
 function renderSync(){const el=$('#syncMsg');if(!el)return;
   el.textContent=syncErr?'Não foi possível salvar na nuvem agora — ficou salvo neste aparelho.':db?(lastSync?'Salvo na nuvem às '+new Date(lastSync).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — aparece no PC e no celular.':'Salvando na nuvem automaticamente.'):'Salvo só neste aparelho. Use "Salvar arquivo" para guardar no Drive.'}
 function renderLista(){const el=$('#c-lista');if(!el)return;
-  const q=busca.trim().toLowerCase(),L=lista().filter(b=>!q||(b.nome+' '+b.end).toLowerCase().includes(q));
-  el.innerHTML=L.length?`<table><tbody>${L.map(b=>`<tr class="row${b.id===S.id?' on':''}" data-open="${esc(b.id)}"><td>${esc(b.nome)}<br><small style="color:var(--muted)">${esc(b.end||b.tel||'')}${b.end||b.tel?' · ':''}${new Date(b.atualizado).toLocaleDateString('pt-BR')}</small></td><td class="n">${money(b.total)}</td><td style="width:1%"><button class="x${delArm===b.id?' warn':''}" data-delp="${esc(b.id)}" aria-label="Apagar orçamento de ${esc(b.nome)}">${delArm===b.id?'Apagar?':'✕'}</button></td></tr>`).join('')}</tbody></table>`:`<p class="empty">${q?'Nenhum orçamento com esse nome.':'Nenhum orçamento salvo ainda. Tudo o que você desenha é salvo sozinho aqui.'}</p>`}
+  const q=busca.trim().toLowerCase(),L=lista().filter(b=>(!q||(b.nome+' '+b.end).toLowerCase().includes(q))&&(!filtro||(b.status||'Rascunho')===filtro));
+  el.innerHTML=L.length?`<table><tbody>${L.map(b=>`<tr class="row${b.id===S.id?' on':''}" data-open="${esc(b.id)}"><td>${esc(b.nome)}<br><small style="color:var(--muted)"><span class="chip" data-s="${esc(b.status||'Rascunho')}">${esc(b.status||'Rascunho')}</span>${esc(b.end||b.tel||'')}${b.end||b.tel?' · ':''}${new Date(b.atualizado).toLocaleDateString('pt-BR')}</small></td><td class="n">${money(b.total)}</td><td style="width:1%"><button class="x${delArm===b.id?' warn':''}" data-delp="${esc(b.id)}" aria-label="Apagar orçamento de ${esc(b.nome)}">${delArm===b.id?'Apagar?':'✕'}</button></td></tr>`).join('')}</tbody></table>`:`<p class="empty">${q?'Nenhum orçamento com esse nome.':'Nenhum orçamento salvo ainda. Tudo o que você desenha é salvo sozinho aqui.'}</p>`}
 function renderTab(){
   $('#side').dataset.tab=tab;document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab));
   const el=$('#tabbody');const c=calc();
@@ -1127,10 +1144,11 @@ function renderTab(){
       <label class="full">Cliente / obra<input id="c-nome" data-c="name" type="text" value="${esc(S.name)}" placeholder="Ex.: Maria — Cozinha Apto 302"></label>
       <label>Telefone<input id="c-tel" data-c="tel" type="tel" inputmode="tel" value="${esc(S.tel)}"></label>
       <label>Endereço da obra<input id="c-end" data-c="end" type="text" value="${esc(S.end)}"></label>
+      <label>Situação<select id="c-status" data-c="status">${STATUS.map(v=>`<option${(S.status||'Rascunho')===v?' selected':''}>${v}</option>`).join('')}</select></label>
       <label class="full">Informações adicionais (sai no PDF)<textarea id="c-obs" data-c="obs" rows="3" placeholder="Ex.: SEM INSTALAÇÃO / PRAZO: 40 dias úteis">${esc(S.obs)}</textarea></label>
     </div><p class="cutlist" id="syncMsg"></p>
     <div class="actions"><button class="btn primary" id="c-new">Novo orçamento</button><button class="btn" id="c-dup">Duplicar orçamento</button><button class="btn" id="c-save">Salvar arquivo</button><button class="btn" id="c-open">Abrir arquivo</button></div></div>
-    <div class="blk"><h3>Orçamentos salvos</h3><input class="search" id="c-busca" type="search" placeholder="Buscar por cliente ou endereço" value="${esc(busca)}" aria-label="Buscar orçamento"><div id="c-lista"></div>
+    <div class="blk"><h3>Orçamentos salvos</h3><input class="search" id="c-busca" type="search" placeholder="Buscar por cliente ou endereço" value="${esc(busca)}" aria-label="Buscar orçamento"><select id="c-filtro" aria-label="Filtrar por situação" style="width:100%;margin-bottom:8px"><option value="">Todas as situações</option>${STATUS.map(v=>`<option${filtro===v?' selected':''}>${v}</option>`).join('')}</select><div id="c-lista"></div>
     <div class="actions"><button class="btn" id="c-all">Baixar cópia de todos</button></div></div>
     <details class="blk"><summary>Dados da empresa (cabeçalho do PDF)</summary><div class="fields">
       <label class="full">Logo${cfg.logo?`<img class="logoprev" src="${cfg.logo}" alt="Logo atual">`:''}<input id="cfg-logo" type="file" accept="image/*"></label>
@@ -1159,10 +1177,12 @@ function renderTab(){
       ${c.mats.map(m=>`<tr><td><span class="sw" style="background:${m.mat.color}"></span>${esc(m.mat.name)}</td><td class="n">${f2(m.m2l)}</td><td class="n">${f2(m.mat.price)}</td><td class="n">${f2(m.sub)}</td></tr>`).join('')}
       </tbody></table>`:'<p class="empty">—</p>'}</div>
     <div class="blk"><h3>Recortes</h3>${c.nCuts?`<table><tbody>${Object.entries(c.cutCount).map(([n,q])=>`<tr><td>${esc(n)}</td><td class="n">${q} un</td><td class="n">${f2(q*(+S.cutPrice||0))}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">Nenhum recorte. Use <kbd>C</kbd> para marcar cuba ou cooktop.</p>'}</div>
+    <div class="blk"><h3>Plano de corte</h3>${planoHtml()}</div>
     <div class="blk"><h3>Ajustes</h3><div class="opts fields">
       <label>Perda / sobra (%)<input id="o-loss" data-o="lossPct" type="number" min="0" step="1" value="${S.lossPct}"></label>
       <label>Valor por recorte (R$)<input id="o-cut" data-o="cutPrice" type="number" min="0" step="5" value="${S.cutPrice}"></label>
       <label>Grade / ímã<select id="o-snap" data-o="snap">${[0.5,1,5,10].map(v=>`<option value="${v}"${+S.snap===v?' selected':''}>${fcm(v)} cm</option>`).join('')}</select></label>
+      <label>Chapa (cm)<span style="display:flex;gap:4px;align-items:center"><input id="o-chW" data-o="chapaW" type="number" min="10" step="1" value="${S.chapaW||300}" aria-label="Comprimento da chapa"> × <input id="o-chH" data-o="chapaH" type="number" min="10" step="1" value="${S.chapaH||180}" aria-label="Largura da chapa"></span></label>
       <label class="check" style="flex-direction:row;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink)"><input id="o-disc" data-o="discountCuts" type="checkbox"${S.discountCuts?' checked':''}> Descontar recortes da área</label>
     </div></div>`;
   }else if(tab==='pecas'){
@@ -1190,7 +1210,10 @@ function renderTab(){
     <div class="blk"><h3>Materiais e preço por m²</h3><div style="display:flex;flex-direction:column;gap:8px">
       ${S.materials.map(m=>`<div class="mat" data-m="${m.id}"><input id="mc-${m.id}" type="color" data-mf="color" value="${m.color}" aria-label="Cor"><input id="mn-${m.id}" type="text" data-mf="name" value="${esc(m.name)}" aria-label="Nome do material"><input id="mp-${m.id}" type="number" data-mf="price" min="0" step="10" value="${m.price}" aria-label="Preço por m²"><button class="x" data-rm="${m.id}" aria-label="Remover material">✕</button></div>`).join('')}
       </div><div class="actions"><button class="btn" id="addMat">+ Material</button></div>
-      <p class="hint" style="margin-top:10px">Os preços do exemplo são ilustrativos — troque pelos da sua tabela.</p></div>`;
+      <p class="hint" style="margin-top:10px">Os preços do exemplo são ilustrativos — troque pelos da sua tabela.</p></div>
+    <div class="blk"><h3>Itens e serviços com preço fixo</h3><p class="hint" style="margin-bottom:8px">Cubas, válvulas, instalação, frete… Entram no PDF pela tela de revisão.</p><div style="display:flex;flex-direction:column;gap:8px">
+      ${(cfg.itens||[]).map((it,i)=>`<div class="it" data-it="${i}"><input id="it-n-${i}" type="text" data-itf="nome" value="${esc(it.nome)}" aria-label="Nome do item"><input id="it-p-${i}" type="number" data-itf="preco" min="0" step="5" value="${it.preco}" aria-label="Preço"><button class="x" data-itrm="${i}" aria-label="Remover item">✕</button></div>`).join('')}
+      </div><div class="actions"><button class="btn" id="addIt">+ Item</button></div></div>`;
     $('#allMatBtn').onclick=()=>{const id=$('#allMat').value;pushUndo();for(const k of pieces())k.material=id;S.defMat=id;renderDefaults();renderAll();save();toast('Todas as peças agora em '+(S.materials.find(m=>m.id===id)?.name||''))};
     $('#addMat').onclick=()=>{pushUndo();S.materials.push({id:uid(),name:'Novo material',color:'#9C8F7E',price:0});renderAll();save()};
   }
@@ -1199,12 +1222,15 @@ const tb=$('#tabbody');
 tb.addEventListener('focusin',e=>{if(e.target.matches('[data-o],[data-mf]'))pending=snapshot()});
 tb.addEventListener('input',e=>{
   const t=e.target;
+  if(t.dataset.itf){const it=cfg.itens[+t.closest('[data-it]').dataset.it];it[t.dataset.itf]=t.dataset.itf==='preco'?+t.value:t.value;saveCfg();return}
   if(t.dataset.o){S[t.dataset.o]=t.type==='checkbox'?t.checked:+t.value;renderTop();renderCanvas();renderMetrics();save();return}
   if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(!m)return;m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save()}
 });
 tb.addEventListener('change',e=>{if(pending){pushUndo(pending);pending=null}const t=e.target;if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(m){m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save()}}if(t.dataset.o==='discountCuts'||t.dataset.o==='snap'){S[t.dataset.o]=t.type==='checkbox'?t.checked:+t.value;t.blur();renderTab();renderTop();save()}});
 tb.addEventListener('focusout',e=>{setTimeout(()=>{if(!tb.contains(document.activeElement))renderTab()},0)});
 tb.addEventListener('click',e=>{
+  const ir=e.target.closest('[data-itrm]');if(ir){cfg.itens.splice(+ir.dataset.itrm,1);saveCfg();renderTab();return}
+  if(e.target.closest('#addIt')){(cfg.itens=cfg.itens||[]).push({nome:'Novo item',preco:0});saveCfg();renderTab();return}
   const rm=e.target.closest('[data-rm]');
   if(rm){if(S.materials.length<=1){toast('Mantenha pelo menos um material');return}const used=pieces().some(s=>s.material===rm.dataset.rm);if(used){toast('Material em uso — troque as peças antes de remover');return}pushUndo();S.materials=S.materials.filter(m=>m.id!==rm.dataset.rm);renderAll();save();return}
   const row=e.target.closest('tr.row[data-id]');
@@ -1278,7 +1304,7 @@ async function exportPdf(){
   const section=t=>{need(18);doc.setFillColor(...BG);doc.rect(M,y,R-M,9,'F');put(t,M+3,y+6.4,13,'bold',TEAL);y+=15};
   const ic={ // tiny vector icons
     mail:(x,b)=>{doc.setFillColor(...TEAL);doc.roundedRect(x,b-3,4.4,3.2,.4,.4,'F');doc.setDrawColor(...W);doc.setLineWidth(.35);doc.line(x+.4,b-2.6,x+2.2,b-1.3);doc.line(x+2.2,b-1.3,x+4,b-2.6)},
-    whats:(x,b)=>{doc.setDrawColor(...TEAL);doc.setLineWidth(.4);doc.circle(x+2,b-1.4,1.9,'S');doc.setFillColor(...TEAL);doc.circle(x+2,b-1.4,.7,'F')},
+    whats:(x,b)=>{doc.addImage(waPng(),'PNG',x-.1,b-3.7,4.4,4.4)},
     tel:(x,b)=>{doc.setDrawColor(...TEAL);doc.setLineWidth(.4);doc.roundedRect(x+.9,b-3.4,2.4,3.9,.4,.4,'S');doc.line(x+1.6,b-.1,x+2.6,b-.1)},
     insta:(x,b)=>{doc.setDrawColor(...TEAL);doc.setLineWidth(.4);doc.roundedRect(x,b-3.6,4,4,1.1,1.1,'S');doc.circle(x+2,b-1.6,.9,'S');doc.setFillColor(...TEAL);doc.circle(x+3.1,b-2.8,.22,'F')},
     face:(x,b)=>{doc.setFillColor(...TEAL);doc.roundedRect(x,b-3.6,4,4,.6,.6,'F');put('f',x+1.5,b-.2,8,'bold',W)}
@@ -1300,25 +1326,110 @@ async function exportPdf(){
   y+=3;section('Informações básicas');put('Validade do orçamento',M+3,y,10.5,'bold',INK);y+=5;put(dstr(new Date(now.getTime()+(+cfg.validade||0)*864e5)),M+3,y,10.5,'normal',INK);y+=9;
   // services
   section('Serviços');put('Descrição',M+3,y,9.5,'bold',MUT);put('Preço',R-3,y,9.5,'bold',MUT,'right');y+=6.5;
-  const lines=pdfLines(),total=lines.reduce((a,l)=>a+(+l.price||0),0);
+  const lines=pdfLines(),tt=pdfTotals(),total=tt.total;
   for(const l of lines){
     const d=wrap(l.desc,128,10.5,'bold');need(d.length*4.5+9);font(10.5,'bold',INK);doc.text(d,M+3,y);put(money(l.price),R-3,y,10.5,'normal',INK,'right');y+=d.length*4.5;
     if(l.mat){put(l.mat,M+3,y,10,'normal',INK);y+=3.5}doc.setDrawColor(232,234,236);doc.setLineWidth(.25);doc.line(M,y,R,y);y+=5.5;
   }
+  if(tt.dv){need(12);put('Subtotal',MID+3,y,10.5,'normal',INK);put(money(tt.sub),R-3,y,10.5,'normal',INK,'right');y+=5.5;put('Desconto'+(S.desconto.tipo==='%'?' ('+fcm(+S.desconto.valor)+'%)':''),MID+3,y,10.5,'normal',INK);put('- '+money(tt.dv),R-3,y,10.5,'normal',INK,'right');y+=4}
   need(14);doc.setFillColor(...TEAL);doc.rect(MID,y,R-MID,9,'F');put('Total',MID+3,y+6.3,12,'bold',W);put(money(total),R-3,y+6.3,12,'bold',W,'right');y+=16;
   // drawing
   if(cfg.desenho&&pieces().length){try{const d=await drawingPng(),iw=R-M,ih=Math.min(95,iw*d.h/d.w),w2=ih*d.w/d.h;need(ih+20);section('Desenho das peças');doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y-2,w2,ih);y+=ih+4}catch(e){}}
   // payment
   section('Pagamento');put('Meios de pagamento',M+3,y,10.5,'bold',INK);if(cfg.pix)put('PIX',MID+3,y,10.5,'bold',INK);y+=5;
   const pg=wrap(cfg.pagamento,MID-M-8,10.5);font(10.5,'normal',INK);doc.text(pg,M+3,y);if(cfg.pix)doc.text(wrap(cfg.pix,R-MID-6,10.5),MID+3,y);y+=pg.length*4.5+6;
+  const cond=condicao(tt);if(cond){need(8);put('Condição: '+cond,M+3,y,10.5,'bold',INK);y+=8}
   // notes
   const notes=[S.obs,cfg.obs].filter(x=>x&&x.trim()).join('\n\n');
   if(notes){section('Informações adicionais');for(const l of wrap(notes,R-M-6,10.5)){need(5);font(10.5,'normal',INK);doc.text(l,M+3,y);y+=4.6}y+=4}
   // footer
   need(32);y=Math.max(y,PH-M-30);doc.setDrawColor(200,204,208);doc.setLineWidth(.4);doc.line(M,y,R,y);y+=7;
   put(cfg.resp,M+3,y,10,'normal',MUT);if(cfg.cnpj)put('CNPJ: '+cfg.cnpj,M+3,y+5.5,10,'normal',MUT);const fy=contacts(MID,y);socials(M+3,Math.max(fy,y+12)+2);
+  if(!S.status||S.status==='Rascunho'){S.status='Enviado';save()}
   await saveFile('Orçamento '+S.num+' '+(S.name||'sem nome'),doc.output('blob'),'pdf');
 }
+/* ---------- discount, down payment, installments ---------- */
+// what the client pays: reviewed lines minus discount; entrada + parcelas of the rest
+function pdfTotals(){
+  const sub=pdfLines().reduce((a,l)=>a+(+l.price||0),0),d=S.desconto||{},dv=Math.min(sub,d.tipo==='%'?sub*(+d.valor||0)/100:(+d.valor||0));
+  const total=sub-dv,ent=Math.min(total,+S.entrada||0),np=Math.max(1,parseInt(S.parcelas)||1);
+  return{sub,dv,total,ent,np,parc:(total-ent)/np};
+}
+function condicao(t){
+  const rest=t.total-t.ent;if(t.ent<=0&&t.np<=1)return'';
+  return(t.ent>0?'Entrada de '+money(t.ent):'')+(rest>.004?(t.ent>0?' + ':'')+(t.np>1?t.np+'x de '+money(t.parc):'saldo de '+money(rest)):'');
+}
+const STATUS=['Rascunho','Enviado','Aprovado','Em produção','Entregue','Perdido'];
+
+/* ---------- WhatsApp mark for the PDF (drawn once on a canvas) ---------- */
+let waImg=null;
+function waPng(){
+  if(waImg)return waImg;const c=document.createElement('canvas');c.width=c.height=96;const g=c.getContext('2d');
+  g.fillStyle='#25D366';g.beginPath();g.arc(48,48,48,0,Math.PI*2);g.fill();
+  g.strokeStyle='#fff';g.fillStyle='#fff';g.lineWidth=6.5;g.beginPath();g.arc(49,46,27,.78*Math.PI,2.72*Math.PI);g.stroke();
+  g.beginPath();g.moveTo(25,61);g.lineTo(19,79);g.lineTo(37,73);g.closePath();g.fill();
+  g.save();g.translate(49,46);g.rotate(-Math.PI/4);g.lineCap='round';g.lineWidth=7;g.beginPath();g.arc(0,0,11.5,.5*Math.PI,1.5*Math.PI);g.stroke();
+  g.beginPath();g.arc(0,-11.5,4.6,0,Math.PI*2);g.fill();g.beginPath();g.arc(0,11.5,4.6,0,Math.PI*2);g.fill();g.restore();
+  return waImg=c.toDataURL('image/png');
+}
+
+/* ---------- cutting plan ---------- */
+// shelf packing per stone: each piece (its bounding box, qty expanded) goes into slabs W×H, long side across when it fits
+function plano(){
+  const W=+S.chapaW||300,H=+S.chapaH||180,gap=.5,out=[];
+  for(const m of S.materials){
+    const items=[];
+    for(const p of pieces())if(p.material===m.id){const b=bbox(p);for(let i=0;i<Math.max(1,+p.qty||1);i++)items.push({n:p.name,w:Math.max(b.w,b.h),h:Math.min(b.w,b.h)})}
+    if(!items.length)continue;
+    items.sort((a,b)=>b.h-a.h||b.w-a.w);
+    const sheets=[],grande=[];
+    for(const it of items){
+      const o=it.w<=W&&it.h<=H?[it.w,it.h]:it.h<=W&&it.w<=H?[it.h,it.w]:null;
+      if(!o){grande.push(it.n);continue}
+      let done=false;
+      for(const sh of sheets){
+        for(const s of sh.shelves)if(o[1]<=s.h&&s.x+o[0]<=W){sh.r.push({x:s.x,y:s.y,w:o[0],h:o[1],n:it.n});s.x+=o[0]+gap;done=true;break}
+        if(!done&&sh.top+o[1]<=H){sh.shelves.push({y:sh.top,h:o[1],x:o[0]+gap});sh.r.push({x:0,y:sh.top,w:o[0],h:o[1],n:it.n});sh.top+=o[1]+gap;done=true}
+        if(done)break;
+      }
+      if(!done)sheets.push({shelves:[{y:0,h:o[1],x:o[0]+gap}],top:o[1]+gap,r:[{x:0,y:0,w:o[0],h:o[1],n:it.n}]});
+    }
+    const used=sheets.reduce((a,s)=>a+s.r.reduce((b,r)=>b+r.w*r.h,0),0);
+    out.push({m,W,H,sheets,grande,aprov:sheets.length?used/(sheets.length*W*H):0});
+  }
+  return out;
+}
+function planoHtml(){
+  const P=plano();if(!P.length)return'<p class="empty">Desenhe as peças para ver quantas chapas usar.</p>';
+  return P.map(p=>`<p style="margin:8px 0 6px"><b>${esc(p.m.name)}</b>: ${p.sheets.length} chapa${p.sheets.length>1?'s':''} de ${fcm(p.W)}×${fcm(p.H)} cm · aproveitamento ${Math.round(p.aprov*100)}%</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${p.sheets.map((s,i)=>`<svg viewBox="0 0 ${p.W} ${p.H}" style="width:calc(50% - 3px);background:var(--panel);border:1px solid var(--line);border-radius:6px" role="img" aria-label="Chapa ${i+1} de ${esc(p.m.name)}">${s.r.map(r=>`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${p.m.color}" fill-opacity=".85" style="stroke:var(--ink)" stroke-width="${p.W/300}"><title>${esc(r.n)} ${fcm(r.w)}×${fcm(r.h)}</title></rect>`).join('')}</svg>`).join('')}</div>
+    ${p.grande.length?`<p class="cutlist" style="color:var(--cut)">Maiores que a chapa: ${esc(p.grande.join(', '))}</p>`:''}`).join('')+'<p class="cutlist">Peças em L/U entram pelo retângulo que as contém; recortes não reduzem o uso de chapa.</p>';
+}
+
+/* ---------- work order for the shop (no prices) ---------- */
+async function exportOs(){
+  let J;try{J=await loadPdf()}catch(e){toast('Sem internet: abra uma vez com internet para ativar o PDF');return}
+  flush();const c=calc(),doc=new J({unit:'mm',format:'a4',compress:true}),M=12,PW=210,PH=297,R=PW-M,TEAL=[14,104,138],INK=[33,37,41],MUT=[108,117,125];let y=16;
+  const T=t=>String(t??'').replace(/[—–]/g,'-').replace(/[•·]/g,'-');
+  const put=(t,x,yy,size,style='normal',color=INK,align='left')=>{doc.setFont('helvetica',style);doc.setFontSize(size);doc.setTextColor(...color);doc.text(T(t),x,yy,{align})};
+  const need=h=>{if(y+h>PH-M){doc.addPage();y=M}};
+  put(cfg.nome,M,y,15,'bold',TEAL);put('Ordem de serviço - oficina',R,y,13,'bold',INK,'right');y+=6;
+  put('Orçamento '+(S.num||'sem número')+'   |   '+new Date().toLocaleDateString('pt-BR'),M,y,10,'normal',MUT);y+=8;
+  put('Cliente: '+(S.name||'Sem nome'),M,y,11.5,'bold');y+=5.5;const info=[S.tel,S.end].filter(Boolean).join('   |   ');if(info){put(info,M,y,10,'normal',MUT);y+=5.5}
+  y+=3;doc.setFillColor(242,243,244);doc.rect(M,y,R-M,8,'F');put('Peça',M+2,y+5.5,10,'bold');put('Medidas',100,y+5.5,10,'bold');put('Qtd',148,y+5.5,10,'bold');put('Pedra',160,y+5.5,10,'bold');y+=13;
+  for(const r of c.rows){
+    const nm=doc.splitTextToSize(T(r.p.name),84);need(nm.length*4.6+(r.cuts.length?5:0)+3);
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...INK);doc.text(nm,M+2,y);
+    const z=sizeOf(r.p);put((z.f==='Retângulo'?'':z.f+' ')+fcm(z.w)+' × '+fcm(z.h)+' cm',100,y,10);put(String(r.qty),148,y,10);put(doc.splitTextToSize(T(r.mat.name),38)[0],160,y,10);
+    y+=nm.length*4.6;
+    if(r.cuts.length){put('Recortes: '+r.cuts.map(x=>x.name.toLowerCase()+' '+fcm(x.w)+'×'+fcm(x.h)).join(', '),M+4,y,9.5,'normal',MUT);y+=5}
+    doc.setDrawColor(232,234,236);doc.setLineWidth(.25);doc.line(M,y-2,R,y-2);y+=3;
+  }
+  if(pieces().length){try{const d=await drawingPng(),iw=R-M,ih=Math.min(150,iw*d.h/d.w),w2=ih*d.w/d.h;need(ih+12);y+=2;put('Desenho',M,y,12,'bold',TEAL);y+=3;doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y,w2,ih);y+=ih+4}catch(e){}}
+  if(S.obs&&S.obs.trim()){need(14);put('Observações',M,y,12,'bold',TEAL);y+=6;for(const l of doc.splitTextToSize(T(S.obs),R-M)){need(5);put(l,M,y,10.5);y+=4.6}}
+  await saveFile('OS '+(S.num||'')+' '+(S.name||'sem nome'),doc.output('blob'),'pdf');
+}
+
 /* ---------- review before PDF ---------- */
 // lines that go to the PDF: the ones from the drawing, with this budget's edits, plus extra items typed by hand
 function pdfLines(){
@@ -1338,9 +1449,14 @@ function renderReview(){
   </div>`).join(''):'<p class="empty">Nenhum item. Use "+ Adicionar item".</p>';
   renderReviewTotal();
 }
-const renderReviewTotal=()=>{$('#rvTotal').textContent=money(pdfLines().reduce((a,l)=>a+(+l.price||0),0))};
+const renderReviewTotal=()=>{const t=pdfTotals(),c=condicao(t);$('#rvSub').textContent=(t.dv?'Subtotal '+money(t.sub)+' − desconto '+money(t.dv):'Total do PDF')+(c?' · '+c:'');$('#rvTotal').textContent=money(t.total)};
+function fillPay(){const d=S.desconto||{};$('#rvDesc').value=d.valor?f2(d.valor):'';$('#rvDescT').value=d.tipo==='%'?'%':'R$';$('#rvEnt').value=S.entrada?f2(S.entrada):'';$('#rvParc').value=S.parcelas||'';
+  $('#rvItem').innerHTML='<option value="">+ Item da tabela…</option>'+(cfg.itens||[]).map((it,i)=>`<option value="${i}">${esc(it.nome)} — ${money(it.preco)}</option>`).join('')}
+$('#rvItem').onchange=e=>{const it=(cfg.itens||[])[e.target.value];e.target.value='';if(!it)return;(S.pdfExtra=S.pdfExtra||[]).push({desc:it.nome,mat:'',price:+it.preco||0});save();renderReview()};
+for(const id of['rvDesc','rvDescT','rvEnt','rvParc'])$('#'+id).addEventListener('input',()=>{S.desconto={tipo:$('#rvDescT').value,valor:parseMoney($('#rvDesc').value)};S.entrada=parseMoney($('#rvEnt').value);S.parcelas=parseInt($('#rvParc').value)||1;save();renderReviewTotal()});
+$('#rvOs').onclick=()=>{rv.hidden=true;exportOs()};
 const rv=$('#review');
-$('#pdfBtn').onclick=()=>{flush();renderReview();rv.hidden=false};
+$('#pdfBtn').onclick=()=>{flush();fillPay();renderReview();rv.hidden=false};
 $('#rvCancel').onclick=()=>{rv.hidden=true};
 rv.addEventListener('click',e=>{if(e.target===rv)rv.hidden=true});
 $('#rvGo').onclick=()=>{rv.hidden=true;exportPdf()};
@@ -1415,6 +1531,7 @@ $('#tabbody').addEventListener('change',async e=>{
 });
 $('#tabbody').addEventListener('input',e=>{
   const t=e.target;if(t.id==='c-busca'){busca=t.value;renderLista();return}
+  if(t.id==='c-filtro'){filtro=t.value;renderLista();return}
   if(t.dataset.cfg){const k=t.dataset.cfg;cfg[k]=t.type==='checkbox'?t.checked:t.type==='number'?+t.value:t.value;saveCfg();return}
   if(t.dataset.c){S[t.dataset.c]=t.value;if(t.dataset.c==='name')$('#projName').value=t.value;save()}
 });
