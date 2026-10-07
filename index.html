@@ -363,6 +363,7 @@ function saveNow(){
 }
 function pushCloud(id,b){if(!db)return;cloudQ=cloudQ.then(()=>db.doc('orcamentos/'+id).set(b)).then(()=>{lastSync=Date.now();syncErr='';renderSync()},e=>{syncErr=e.code||'erro';renderSync()})}
 let saveT=null;function save(){clearTimeout(saveT);saveT=setTimeout(saveNow,800)}
+addEventListener('pagehide',()=>flush());document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
 function flush(){if(saveT){clearTimeout(saveT);saveNow()}}
 // every saved budget, newest first: the cloud list when it is available, else this device's list
 function lista(){return(cloud||Object.entries(localList()).map(([id,b])=>({id,...b}))).slice().sort((a,b)=>b.atualizado-a.atualizado)}
@@ -376,9 +377,11 @@ window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
       const c=byId[S.id];if(c&&!saveT&&(!l[S.id]||c.atualizado>l[S.id].atualizado)){try{const o=JSON.parse(c.estado);if(o.shapes){S=o;undoStack=[];selId=null;multi.clear();try{localStorage.setItem(KEY,c.estado)}catch(e){}renderDefaults();renderAll();fit()}}catch(e){}}}
     renderLista();renderSync()},()=>{cloud=null;db=null;renderSync()});
 });
-let S=load()||sample();if(!S.id)S.id=uid();
+// empty budget that keeps the stones, prices and settings of k
+function blankFrom(k){return{...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:k.materials,defMat:k.materials[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep}}
+let S=load();S=S?blankFrom(S):sample();
 let view={x:-40,y:-40,scale:2};
-let tool='select',selId=null,tab='resumo';
+let tool='select',selId=null,tab=S.shapes.length?'resumo':'clientes';
 let undoStack=[];
 let draft={pts:[],cursor:null,typed:''};
 let cursorCm=null;
@@ -1078,7 +1081,7 @@ function renderLista(){const el=$('#c-lista');if(!el)return;
   const q=busca.trim().toLowerCase(),L=lista().filter(b=>!q||(b.nome+' '+b.end).toLowerCase().includes(q));
   el.innerHTML=L.length?`<table><tbody>${L.map(b=>`<tr class="row${b.id===S.id?' on':''}" data-open="${esc(b.id)}"><td>${esc(b.nome)}<br><small style="color:var(--muted)">${esc(b.end||b.tel||'')}${b.end||b.tel?' · ':''}${new Date(b.atualizado).toLocaleDateString('pt-BR')}</small></td><td class="n">${money(b.total)}</td><td style="width:1%"><button class="x${delArm===b.id?' warn':''}" data-delp="${esc(b.id)}" aria-label="Apagar orçamento de ${esc(b.nome)}">${delArm===b.id?'Apagar?':'✕'}</button></td></tr>`).join('')}</tbody></table>`:`<p class="empty">${q?'Nenhum orçamento com esse nome.':'Nenhum orçamento salvo ainda. Tudo o que você desenha é salvo sozinho aqui.'}</p>`}
 function renderTab(){
-  $('#side').dataset.tab=tab;
+  $('#side').dataset.tab=tab;document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab));
   const el=$('#tabbody');const c=calc();
   // keep focus when re-rendering while typing in the tab
   const act=document.activeElement;if(act&&el.contains(act)&&act.matches('input,select'))return;
@@ -1205,7 +1208,7 @@ function dupProj(){
 }
 function newProj(){
   flush();const k=S;
-  S={...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:k.materials,defMat:k.materials[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep};
+  S=blankFrom(k);
   undoStack=[];selId=null;multi.clear();try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
   renderDefaults();renderAll();fit();toast('Novo orçamento — o anterior ficou salvo em Clientes');$('#projName').focus();
 }
