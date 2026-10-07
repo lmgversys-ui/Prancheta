@@ -1206,7 +1206,7 @@ function renderTab(){
     renderLista();renderSync();return;
   }
   if(tab==='resumo'){
-    const P=plano(),nCh=P.reduce((a,p)=>a+p.sheets.length,0),nPc=c.types.reduce((a,t)=>a+t.n,0);
+    const nPc=c.types.reduce((a,t)=>a+t.n,0);
     el.innerHTML=`
     <div class="grand">
       <span>Área líquida</span><b>${f2(c.m2)} m²</b>
@@ -1222,12 +1222,10 @@ function renderTab(){
       ${c.mats.map(m=>`<tr><td><span class="sw" style="background:${m.mat.color}"></span>${esc(m.mat.name)}</td><td class="n">${f2(m.m2l)}</td><td class="n">${f2(m.mat.price)}</td><td class="n">${f2(m.sub)}</td></tr>`).join('')}
       </tbody></table>`:'<p class="empty">—</p>',false,c.mats.length+' pedra'+(c.mats.length===1?'':'s'))
     +sec('r-cut','cut','Recortes',c.nCuts?`<table><tbody>${Object.entries(c.cutCount).map(([n,q])=>`<tr><td>${esc(n)}</td><td class="n">${q} un</td><td class="n">${f2(q*(+S.cutPrice||0))}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">Nenhum recorte. Use a ferramenta de recorte para marcar cuba ou cooktop.</p>',false,c.nCuts+' un')
-    +sec('r-plano','grid','Plano de corte',planoHtml(),false,nCh?nCh+' chapa'+(nCh>1?'s':''):'')
     +sec('r-aj','sliders','Ajustes',`<div class="opts fields">
       <label>Perda / sobra (%)<input id="o-loss" data-o="lossPct" type="number" min="0" step="1" value="${S.lossPct}"></label>
       <label>Valor por recorte (R$)<input id="o-cut" data-o="cutPrice" type="number" min="0" step="5" value="${S.cutPrice}"></label>
       <label>Grade / ímã<select id="o-snap" data-o="snap">${[0.5,1,5,10].map(v=>`<option value="${v}"${+S.snap===v?' selected':''}>${fcm(v)} cm</option>`).join('')}</select></label>
-      <label>Chapa (cm)<span style="display:flex;gap:4px;align-items:center"><input id="o-chW" data-o="chapaW" type="number" min="10" step="1" value="${S.chapaW||300}" aria-label="Comprimento da chapa"> × <input id="o-chH" data-o="chapaH" type="number" min="10" step="1" value="${S.chapaH||180}" aria-label="Largura da chapa"></span></label>
       <label class="check" style="flex-direction:row;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink)"><input id="o-disc" data-o="discountCuts" type="checkbox"${S.discountCuts?' checked':''}> Descontar recortes da área</label>
     </div>`,false,'perda '+fcm(+S.lossPct||0)+'%');
   }else if(tab==='pecas'){
@@ -1416,38 +1414,6 @@ function waPng(){
   return waImg=c.toDataURL('image/png');
 }
 
-/* ---------- cutting plan ---------- */
-// shelf packing per stone: each piece (its bounding box, qty expanded) goes into slabs W×H, long side across when it fits
-function plano(){
-  const W=+S.chapaW||300,H=+S.chapaH||180,gap=.5,out=[];
-  for(const m of S.materials){
-    const items=[];
-    for(const p of pieces())if(p.material===m.id){const b=bbox(p);for(let i=0;i<Math.max(1,+p.qty||1);i++)items.push({n:p.name,w:Math.max(b.w,b.h),h:Math.min(b.w,b.h)})}
-    if(!items.length)continue;
-    items.sort((a,b)=>b.h-a.h||b.w-a.w);
-    const sheets=[],grande=[];
-    for(const it of items){
-      const o=it.w<=W&&it.h<=H?[it.w,it.h]:it.h<=W&&it.w<=H?[it.h,it.w]:null;
-      if(!o){grande.push(it.n);continue}
-      let done=false;
-      for(const sh of sheets){
-        for(const s of sh.shelves)if(o[1]<=s.h&&s.x+o[0]<=W){sh.r.push({x:s.x,y:s.y,w:o[0],h:o[1],n:it.n});s.x+=o[0]+gap;done=true;break}
-        if(!done&&sh.top+o[1]<=H){sh.shelves.push({y:sh.top,h:o[1],x:o[0]+gap});sh.r.push({x:0,y:sh.top,w:o[0],h:o[1],n:it.n});sh.top+=o[1]+gap;done=true}
-        if(done)break;
-      }
-      if(!done)sheets.push({shelves:[{y:0,h:o[1],x:o[0]+gap}],top:o[1]+gap,r:[{x:0,y:0,w:o[0],h:o[1],n:it.n}]});
-    }
-    const used=sheets.reduce((a,s)=>a+s.r.reduce((b,r)=>b+r.w*r.h,0),0);
-    out.push({m,W,H,sheets,grande,aprov:sheets.length?used/(sheets.length*W*H):0});
-  }
-  return out;
-}
-function planoHtml(){
-  const P=plano();if(!P.length)return'<p class="empty">Desenhe as peças para ver quantas chapas usar.</p>';
-  return P.map(p=>`<p style="margin:8px 0 6px"><b>${esc(p.m.name)}</b>: ${p.sheets.length} chapa${p.sheets.length>1?'s':''} de ${fcm(p.W)}×${fcm(p.H)} cm · aproveitamento ${Math.round(p.aprov*100)}%</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px">${p.sheets.map((s,i)=>`<svg viewBox="0 0 ${p.W} ${p.H}" style="width:calc(50% - 3px);background:var(--panel);border:1px solid var(--line);border-radius:6px" role="img" aria-label="Chapa ${i+1} de ${esc(p.m.name)}">${s.r.map(r=>`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="${p.m.color}" fill-opacity=".85" style="stroke:var(--ink)" stroke-width="${p.W/300}"><title>${esc(r.n)} ${fcm(r.w)}×${fcm(r.h)}</title></rect>`).join('')}</svg>`).join('')}</div>
-    ${p.grande.length?`<p class="cutlist" style="color:var(--cut)">Maiores que a chapa: ${esc(p.grande.join(', '))}</p>`:''}`).join('')+'<p class="cutlist">Peças em L/U entram pelo retângulo que as contém; recortes não reduzem o uso de chapa.</p>';
-}
 
 /* ---------- work order for the shop (no prices) ---------- */
 async function exportOs(){
