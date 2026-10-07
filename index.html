@@ -178,6 +178,20 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:12px;box-shadow:var(--shadow);font-weight:500;opacity:0;transition:.2s;pointer-events:none;z-index:9}
 .toast.on{opacity:1;transform:translateX(-50%)}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
+.modal{position:fixed;inset:0;background:rgba(15,20,22,.45);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal[hidden]{display:none}
+.sheet{background:var(--panel);border-radius:16px;width:100%;max-width:600px;max-height:calc(100% - 16px);overflow:auto;padding:18px;box-shadow:var(--shadow)}
+.sheet h2{margin:0 0 4px;font-size:18px}
+.rv{display:grid;grid-template-columns:minmax(0,1fr) 112px 34px;gap:6px 8px;padding:10px 0;border-bottom:1px solid var(--line);align-items:start}
+.rv textarea{grid-column:1;min-height:46px}
+.rv .mat{grid-column:1}
+.rv .price{grid-column:2;grid-row:1;text-align:right}
+.rv .x{grid-column:3;grid-row:1;border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:8px;height:34px;font-size:16px}
+.rv .x:hover{color:var(--cut);background:var(--panel2)}
+.rv small{grid-column:1/-1;color:var(--muted);font-size:12px}
+@media (max-width:600px){.rv textarea{grid-column:1/3}.rv .price{grid-row:2;grid-column:2}.rv .mat{grid-row:2}}
+.rvtotal{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding:12px 14px;border-radius:12px;background:var(--panel2)}
+.rvtotal b{font-size:22px;color:var(--good)}
 
 /* desktop-hidden mobile pieces */
 .sheethead{display:none}
@@ -309,6 +323,14 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="modal" id="review" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rvTitle">
+  <h2 id="rvTitle">Revisar antes do PDF</h2>
+  <p class="hint">Ajuste a descrição, a pedra e o valor de cada item. Fica salvo neste orçamento.</p>
+  <div id="rvRows"></div>
+  <div class="actions"><button class="btn" id="rvAdd">+ Adicionar item</button><button class="btn" id="rvReset">Voltar aos valores do desenho</button></div>
+  <div class="rvtotal"><span>Total do PDF</span><b id="rvTotal"></b></div>
+  <div class="actions" style="justify-content:flex-end"><button class="btn" id="rvCancel">Cancelar</button><button class="btn primary" id="rvGo">Gerar PDF</button></div>
+</div></div>
 
 <script>
 (()=>{
@@ -1237,9 +1259,9 @@ function serviceLines(c,loss){
     const price=ms.reduce((a,m)=>a+m.m2*loss*(+m.mat.price||0)+m.cuts.length*m.qty*cp,0);
     const extras=[...new Set(ms.slice(1).map(k=>{const z=sizeOf(k.p);return k.p.type.toLowerCase()+' '+fcm(Math.min(z.w,z.h))+'cm'}))];
     const cutsTxt=[...new Set(ms.flatMap(m=>m.cuts.map(x=>x.name.toLowerCase())))];
-    out.push({desc:(root.qty>1?root.qty+'x ':'')+root.p.name+' - '+sizeTxt(root)+(extras.length?', '+extras.join(', '):'')+(cutsTxt.length?', com '+cutsTxt.join(' e '):''),mat:[...new Set(ms.map(m=>m.mat.name))].join(' / '),price});
+    out.push({key:root.p.id,desc:(root.qty>1?root.qty+'x ':'')+root.p.name+' - '+sizeTxt(root)+(extras.length?', '+extras.join(', '):'')+(cutsTxt.length?', com '+cutsTxt.join(' e '):''),mat:[...new Set(ms.map(m=>m.mat.name))].join(' / '),price});
   }
-  for(const[n,q]of Object.entries(c.cutCount))if(n.includes('fora de peça'))out.push({desc:q+' '+n,mat:'',price:q*cp});
+  for(const[n,q]of Object.entries(c.cutCount))if(n.includes('fora de peça'))out.push({key:'cut:'+n,desc:q+' '+n,mat:'',price:q*cp});
   return out;
 }
 async function exportPdf(){
@@ -1278,11 +1300,12 @@ async function exportPdf(){
   y+=3;section('Informações básicas');put('Validade do orçamento',M+3,y,10.5,'bold',INK);y+=5;put(dstr(new Date(now.getTime()+(+cfg.validade||0)*864e5)),M+3,y,10.5,'normal',INK);y+=9;
   // services
   section('Serviços');put('Descrição',M+3,y,9.5,'bold',MUT);put('Preço',R-3,y,9.5,'bold',MUT,'right');y+=6.5;
-  for(const l of serviceLines(c,loss)){
+  const lines=pdfLines(),total=lines.reduce((a,l)=>a+(+l.price||0),0);
+  for(const l of lines){
     const d=wrap(l.desc,128,10.5,'bold');need(d.length*4.5+9);font(10.5,'bold',INK);doc.text(d,M+3,y);put(money(l.price),R-3,y,10.5,'normal',INK,'right');y+=d.length*4.5;
     if(l.mat){put(l.mat,M+3,y,10,'normal',INK);y+=3.5}doc.setDrawColor(232,234,236);doc.setLineWidth(.25);doc.line(M,y,R,y);y+=5.5;
   }
-  need(14);doc.setFillColor(...TEAL);doc.rect(MID,y,R-MID,9,'F');put('Total',MID+3,y+6.3,12,'bold',W);put(money(c.total),R-3,y+6.3,12,'bold',W,'right');y+=16;
+  need(14);doc.setFillColor(...TEAL);doc.rect(MID,y,R-MID,9,'F');put('Total',MID+3,y+6.3,12,'bold',W);put(money(total),R-3,y+6.3,12,'bold',W,'right');y+=16;
   // drawing
   if(cfg.desenho&&pieces().length){try{const d=await drawingPng(),iw=R-M,ih=Math.min(95,iw*d.h/d.w),w2=ih*d.w/d.h;need(ih+20);section('Desenho das peças');doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y-2,w2,ih);y+=ih+4}catch(e){}}
   // payment
@@ -1296,7 +1319,39 @@ async function exportPdf(){
   put(cfg.resp,M+3,y,10,'normal',MUT);if(cfg.cnpj)put('CNPJ: '+cfg.cnpj,M+3,y+5.5,10,'normal',MUT);const fy=contacts(MID,y);socials(M+3,Math.max(fy,y+12)+2);
   await saveFile('Orçamento '+S.num+' '+(S.name||'sem nome'),doc.output('blob'),'pdf');
 }
-$('#pdfBtn').onclick=()=>exportPdf();
+/* ---------- review before PDF ---------- */
+// lines that go to the PDF: the ones from the drawing, with this budget's edits, plus extra items typed by hand
+function pdfLines(){
+  const ed=S.pdfEdit||{},gen=serviceLines(calc(),1+(+S.lossPct||0)/100);
+  return[...gen.map(l=>({...l,...ed[l.key]})).filter(l=>!l.hide),...(S.pdfExtra||[])];
+}
+const parseMoney=v=>{const t=String(v).replace(/[^\d,.-]/g,'');return+(t.includes(',')?t.replace(/\./g,'').replace(',','.'):t)||0};
+function renderReview(){
+  const ed=S.pdfEdit||{},gen=serviceLines(calc(),1+(+S.lossPct||0)/100);
+  const rows=[...gen.filter(l=>!(ed[l.key]||{}).hide).map(l=>({k:l.key,auto:l,cur:{...l,...ed[l.key]}})),...(S.pdfExtra||[]).map((l,i)=>({k:'x'+i,cur:l}))];
+  $('#rvRows').innerHTML=rows.length?rows.map(r=>`<div class="rv" data-k="${esc(r.k)}">
+    <textarea data-f="desc" rows="2" aria-label="Descrição">${esc(r.cur.desc)}</textarea>
+    <input class="price" data-f="price" type="text" inputmode="decimal" value="${f2(r.cur.price)}" aria-label="Valor em reais">
+    <button class="x" data-rm aria-label="Tirar este item do PDF">✕</button>
+    <input class="mat" data-f="mat" type="text" value="${esc(r.cur.mat)}" placeholder="Pedra / observação" aria-label="Pedra">
+    ${r.auto&&(r.cur.desc!==r.auto.desc||Math.abs(r.cur.price-r.auto.price)>.004||r.cur.mat!==r.auto.mat)?`<small>Editado — valor do desenho: ${money(r.auto.price)}</small>`:''}
+  </div>`).join(''):'<p class="empty">Nenhum item. Use "+ Adicionar item".</p>';
+  renderReviewTotal();
+}
+const renderReviewTotal=()=>{$('#rvTotal').textContent=money(pdfLines().reduce((a,l)=>a+(+l.price||0),0))};
+const rv=$('#review');
+$('#pdfBtn').onclick=()=>{flush();renderReview();rv.hidden=false};
+$('#rvCancel').onclick=()=>{rv.hidden=true};
+rv.addEventListener('click',e=>{if(e.target===rv)rv.hidden=true});
+$('#rvGo').onclick=()=>{rv.hidden=true;exportPdf()};
+$('#rvAdd').onclick=()=>{(S.pdfExtra=S.pdfExtra||[]).push({desc:'',mat:'',price:0});save();renderReview();const t=[...$('#rvRows').querySelectorAll('textarea')].pop();t&&t.focus()};
+$('#rvReset').onclick=()=>{S.pdfEdit={};S.pdfExtra=[];save();renderReview();toast('Itens voltaram aos valores do desenho')};
+// edit a field: generated lines keep their edits in S.pdfEdit[key], extra lines live in S.pdfExtra
+function rvSet(row,f,v){const k=row.dataset.k;if(k[0]==='x'&&/^x\d+$/.test(k))(S.pdfExtra[+k.slice(1)]||{})[f]=v;else{S.pdfEdit=S.pdfEdit||{};S.pdfEdit[k]={...S.pdfEdit[k],[f]:v}}save()}
+$('#rvRows').addEventListener('input',e=>{const row=e.target.closest('.rv'),f=e.target.dataset.f;if(!row||!f)return;rvSet(row,f,f==='price'?parseMoney(e.target.value):e.target.value);renderReviewTotal()});
+$('#rvRows').addEventListener('change',e=>{if(e.target.dataset.f==='price')renderReview()});
+$('#rvRows').addEventListener('click',e=>{const b=e.target.closest('[data-rm]');if(!b)return;const k=b.closest('.rv').dataset.k;if(/^x\d+$/.test(k))S.pdfExtra.splice(+k.slice(1),1);else rvSet(b.closest('.rv'),'hide',true);renderReview()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!rv.hidden){rv.hidden=true}});
 $('#copyCsv').onclick=()=>{
   const c=calc(),q=v=>`"${String(v).replace(/"/g,'""')}"`,row=a=>a.map(q).join(';'),loss=1+(+S.lossPct||0)/100;
   const L=[row(['Peça','Tipo','Pedra','Formato','Comprimento (cm)','Largura (cm)','Quantidade','Recortes','Área (m²)','Preço do m² (R$)','Valor (R$)'])];
