@@ -881,13 +881,13 @@ function overlaps(b,excl){return pieces().find(s=>{if(excl.includes(s.id))return
 function placeBelow(x0,w,h,y,excl=[]){for(let i=0;i<200;i++){const hit=overlaps({x0,x1:x0+w,y0:y,y1:y+h},excl);if(!hit)return y;y=bbox(hit).y1+6}return y}
 function placeAbove(x0,w,h,y,excl=[]){for(let i=0;i<200;i++){const hit=overlaps({x0,x1:x0+w,y0:y,y1:y+h},excl);if(!hit)return y;y=bbox(hit).y0-6-h}return y}
 function duplicate(){
-  const s=byId(selId);if(!s)return;pushUndo();
-  const g=groupOf(s.id).map(byId),src=[...g,...g.filter(x=>x.kind!=='cut').flatMap(cutsOf)];
+  const sel=group();if(!sel.length)return;pushUndo();
+  const g=[...new Set(sel.flatMap(groupOf))].map(byId),src=[...new Set([...g,...g.filter(x=>x.kind!=='cut').flatMap(cutsOf)])];
   const b=src.map(bbox).reduce((a,o)=>({x0:Math.min(a.x0,o.x0),y0:Math.min(a.y0,o.y0),x1:Math.max(a.x1,o.x1),y1:Math.max(a.y1,o.y1)}));
   const dy=placeBelow(b.x0,b.x1-b.x0,b.y1-b.y0,b.y1+10)-b.y0,ids=Object.fromEntries(src.map(x=>[x.id,uid()]));
-  for(const x of src){const c=clone(x);c.id=ids[x.id];if(ids[c.parent])c.parent=ids[c.parent];if(x===g[0]&&c.kind!=='cut')c.name+=' (cópia)';
+  for(const x of src){const c=clone(x);c.id=ids[x.id];if(ids[c.parent])c.parent=ids[c.parent];if(c.kind!=='cut'&&!ids[x.parent])c.name+=' (cópia)';
     if(c.kind==='poly')c.pts=c.pts.map(([px,py])=>[px,r1(py+dy)]);else c.y=r1(c.y+dy);S.shapes.push(c)}
-  selId=ids[s.id];renderAll();save();
+  setGroup(sel.map(i=>ids[i]));save();toast(sel.length>1?sel.length+' itens copiados':'Item copiado');
 }
 function rotate(){
   const s=byId(selId);if(!s)return;pushUndo();const g=groupOf(s.id).map(byId),[cx,cy]=center(g[0]);
@@ -969,7 +969,7 @@ function renderInspector(){
     <div class="metrics"><div class="metric"><span>Peças</span><b>${ps.length}</b></div><div class="metric"><span>Área total</span><b>${f2(a)}<small>m²</small></b></div></div>
     <div class="fields"><label class="full">Trocar material de todas<select id="m-mat"><option value="">— escolher —</option>${matOpts('')}</select></label></div>
     <p class="cutlist">Arraste qualquer peça selecionada para mover todas juntas. Toque/Shift+clique para pôr ou tirar da seleção.</p>
-    <div class="actions"><button class="btn" data-a="clear">Limpar seleção</button><button class="btn danger" data-a="del">Excluir todas</button></div>`;
+    <div class="actions"><button class="btn" data-a="dup">Duplicar</button><button class="btn" data-a="clear">Limpar seleção</button><button class="btn danger" data-a="del">Excluir todas</button></div>`;
     return;
   }
   if(!s){el.innerHTML='';return}
@@ -1088,7 +1088,7 @@ function renderTab(){
       <label>Telefone<input id="c-tel" data-c="tel" type="tel" inputmode="tel" value="${esc(S.tel)}"></label>
       <label>Endereço da obra<input id="c-end" data-c="end" type="text" value="${esc(S.end)}"></label>
     </div><p class="cutlist" id="syncMsg"></p>
-    <div class="actions"><button class="btn primary" id="c-new">Novo orçamento</button><button class="btn" id="c-save">Salvar arquivo</button><button class="btn" id="c-open">Abrir arquivo</button></div></div>
+    <div class="actions"><button class="btn primary" id="c-new">Novo orçamento</button><button class="btn" id="c-dup">Duplicar orçamento</button><button class="btn" id="c-save">Salvar arquivo</button><button class="btn" id="c-open">Abrir arquivo</button></div></div>
     <div class="blk"><h3>Orçamentos salvos</h3><input class="search" id="c-busca" type="search" placeholder="Buscar por cliente ou endereço" value="${esc(busca)}" aria-label="Buscar orçamento"><div id="c-lista"></div>
     <div class="actions"><button class="btn" id="c-all">Baixar cópia de todos</button></div></div>`;
     renderLista();renderSync();return;
@@ -1197,6 +1197,12 @@ function openProj(b){
   if(!o||!o.shapes||!o.materials){toast('Arquivo inválido — não é um orçamento da Prancheta');return false}
   flush();S=o;if(!S.id)S.id=b.id||uid();undoStack=[];selId=null;multi.clear();renderDefaults();renderAll();fit();save();toast('Aberto: '+(S.name||'Sem nome'));return true;
 }
+// copy of the open budget ("Maria — opção 2"), to quote the same pieces in other stones
+function dupProj(){
+  flush();const base=(S.name||'Sem nome').replace(/ — opção \d+$/,''),n=lista().filter(b=>b.nome.startsWith(base+' — opção')).length+2;
+  S={...clone(S),id:uid(),name:base+' — opção '+n};undoStack=[];selId=null;multi.clear();renderDefaults();renderAll();save();
+  toast('Cópia criada: '+S.name+' — troque as pedras na aba Materiais');
+}
 function newProj(){
   flush();const k=S;
   S={...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:k.materials,defMat:k.materials[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep};
@@ -1223,6 +1229,7 @@ picker.onchange=async()=>{const f=picker.files[0];picker.value='';if(!f)return;l
 $('#tabbody').addEventListener('click',e=>{
   const t=e.target;
   if(t.closest('#c-new'))return newProj();
+  if(t.closest('#c-dup'))return dupProj();
   if(t.closest('#c-save')){flush();return saveFile('Orçamento '+(S.name||'sem nome')+' '+today(),JSON.stringify({app:'prancheta',id:S.id,...body()}))}
   if(t.closest('#c-open'))return picker.click();
   if(t.closest('#c-all'))return saveFile('Prancheta backup '+today(),JSON.stringify({app:'prancheta',orcamentos:lista()}));
