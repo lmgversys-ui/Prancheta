@@ -1,15 +1,15 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>Prancheta da Marmoraria</title>
+<title>Marmofácil</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Nunito:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root{
   --bg:#EDF0EF; --panel:#FFFFFF; --panel2:#F2F5F4; --ink:#1B2226; --muted:#66717A; --line:#E1E6E4;
   --accent:#1A63A0; --accent-ink:#FFFFFF; --accent-soft:#E4EEF7;
   --canvas:#FAFBFA; --grid-minor:#EEF2F0; --grid-major:#D9E0DD;
   --cut:#C0432B; --good:#1E7A4A;
-  --shadow:0 1px 2px rgba(27,34,38,.06),0 8px 24px rgba(27,34,38,.08);
+  --brand:#0E688A;--shadow:0 1px 2px rgba(27,34,38,.06),0 8px 24px rgba(27,34,38,.08);
   --display:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
   --ui:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
@@ -20,7 +20,7 @@
   --accent:#6AAEE0; --accent-ink:#0D1A24; --accent-soft:#1B3142;
   --canvas:#101416; --grid-minor:#1A2023; --grid-major:#273033;
   --cut:#E57B62; --good:#6CC18F;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+  --brand:#5FB3D3;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -30,8 +30,8 @@ button,input,select{font:inherit;color:inherit}
 
 /* top bar */
 .top{display:flex;align-items:center;gap:14px 18px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
-.brand{font-family:var(--display);font-weight:700;font-size:18px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;white-space:nowrap}
-.brand i{display:inline-block;width:16px;height:16px;border-radius:2px;background:linear-gradient(135deg,#2B2B2E 0 50%,#E6E2D8 50% 100%);border:1px solid var(--line)}
+.brand{font-family:"Nunito",var(--display);font-weight:700;font-size:21px;display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--brand)}
+.brand b{font-weight:500;color:#C08A12}
 .proj{flex:1 1 200px;min-width:0;border:1px solid transparent;background:transparent;padding:5px 8px;border-radius:6px;font-weight:600;font-size:15px}
 .proj:hover,.proj:focus{border-color:var(--line);background:var(--panel2);outline:none}
 .themebtn{width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--panel);cursor:pointer;color:var(--ink);flex:none}
@@ -247,7 +247,7 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
 
 <div class="app">
   <header class="top">
-    <div class="brand"><i></i>Prancheta</div>
+    <div class="brand"><svg viewBox="0 0 72 72" width="28" height="28" aria-hidden="true"><rect width="72" height="72" rx="16" fill="#0E688A"/><path d="M14 56 V14 L56 56 Z" fill="none" stroke="#F2C230" stroke-width="4" stroke-linejoin="round"/><path d="M22 48 V32 L38 48 Z" fill="none" stroke="#F2C230" stroke-width="2.5" stroke-linejoin="round"/><rect x="10" y="60" width="52" height="5" rx="2" fill="#EEEBE4"/></svg><span>Marmo<b>fácil</b></span></div>
     <input class="proj" id="projName" type="text" placeholder="Nome do cliente / obra" aria-label="Nome do cliente ou da obra">
     <div class="newdef" id="newdef">
       <span class="lbl">Novas peças</span>
@@ -1308,7 +1308,7 @@ $('#copyCsv').onclick=()=>{
 // switch to another saved budget (the current one is saved first)
 function openProj(b){
   let o;try{o=typeof b.estado==='string'?JSON.parse(b.estado):b.estado}catch(e){}
-  if(!o||!o.shapes||!o.materials){toast('Arquivo inválido — não é um orçamento da Prancheta');return false}
+  if(!o||!o.shapes||!o.materials){toast('Arquivo inválido — não é um orçamento do Marmofácil');return false}
   flush();S=o;if(!S.id)S.id=b.id||uid();undoStack=[];selId=null;multi.clear();renderDefaults();renderAll();fit();save();toast('Aberto: '+(S.name||'Sem nome'));return true;
 }
 // copy of the open budget ("Maria — opção 2"), to quote the same pieces in other stones
@@ -1337,7 +1337,7 @@ async function saveFile(name,text,ext='json'){
 }
 const today=()=>new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
 const picker=Object.assign(document.createElement('input'),{type:'file',accept:'.json,application/json',hidden:true});document.body.append(picker);
-picker.onchange=async()=>{const f=picker.files[0];picker.value='';if(!f)return;let o;try{o=JSON.parse(await f.text())}catch(e){toast('Arquivo inválido — não é um orçamento da Prancheta');return}
+picker.onchange=async()=>{const f=picker.files[0];picker.value='';if(!f)return;let o;try{o=JSON.parse(await f.text())}catch(e){toast('Arquivo inválido — não é um orçamento do Marmofácil');return}
   if(Array.isArray(o.orcamentos)){const l=localList();let n=0;for(const b of o.orcamentos){if(!b||!b.id||!b.estado)continue;l[b.id]=b;pushCloud(b.id,b);n++}try{localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}renderLista();toast(n+' orçamentos restaurados');return}
   openProj(o);};
 $('#tabbody').addEventListener('click',e=>{
@@ -1346,7 +1346,7 @@ $('#tabbody').addEventListener('click',e=>{
   if(t.closest('#c-dup'))return dupProj();
   if(t.closest('#c-save')){flush();return saveFile('Orçamento '+(S.name||'sem nome')+' '+today(),JSON.stringify({app:'prancheta',id:S.id,...body()}))}
   if(t.closest('#c-open'))return picker.click();
-  if(t.closest('#c-all'))return saveFile('Prancheta backup '+today(),JSON.stringify({app:'prancheta',orcamentos:lista()}));
+  if(t.closest('#c-all'))return saveFile('Marmofácil backup '+today(),JSON.stringify({app:'prancheta',orcamentos:lista()}));
   const d=t.closest('[data-delp]');if(d){const id=d.dataset.delp;if(delArm!==id){delArm=id;renderLista();setTimeout(()=>{if(delArm===id){delArm='';renderLista()}},3000)}else{delArm='';delProj(id)}return}
   const r=t.closest('[data-open]');if(r&&r.dataset.open!==S.id){const b=lista().find(x=>x.id===r.dataset.open);if(b)openProj(b)}
 });
