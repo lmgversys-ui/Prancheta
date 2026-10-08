@@ -190,7 +190,7 @@ textarea{background:var(--panel2);border:1px solid transparent;border-radius:9px
 textarea:focus{outline:2px solid var(--accent);border-color:transparent}
 details.blk>summary{cursor:pointer;font-family:var(--display);font-weight:600;font-size:15px;padding:4px 0}
 details.blk[open]>summary{margin-bottom:10px}
-.logoprev{max-width:180px;max-height:90px;border-radius:8px;background:#fff;display:block;border:1px solid var(--line)}
+.logoprev{width:auto;height:auto;max-width:180px;max-height:90px;object-fit:contain;align-self:flex-start;border-radius:8px;background:#fff;display:block;border:1px solid var(--line)}
 .search{width:100%;margin-bottom:8px}
 tr.row td .x{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:8px;padding:4px 8px;font:inherit}
 tr.row td .x:hover{color:var(--cut);background:var(--panel2)}
@@ -1743,7 +1743,7 @@ $('#tabbody').addEventListener('click',e=>{
 $('#tabbody').addEventListener('change',async e=>{
   if(e.target.id==='cfg-desenho'){cfg.desenho=e.target.checked;saveCfg();return}
   if(e.target.id!=='cfg-logo'||!e.target.files[0])return;
-  try{const img=new Image();img.src=URL.createObjectURL(e.target.files[0]);await img.decode();const r=Math.min(1,600/img.naturalWidth,300/img.naturalHeight);
+  try{const img=new Image();await new Promise((ok,no)=>{img.onload=ok;img.onerror=no;img.src=URL.createObjectURL(e.target.files[0])});const r=Math.min(1,600/img.naturalWidth,300/img.naturalHeight);
     const cv=document.createElement('canvas');cv.width=Math.round(img.naturalWidth*r);cv.height=Math.round(img.naturalHeight*r);const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);
     cfg.logo=cv.toDataURL('image/jpeg',.88);saveCfg();renderTab();toast('Logo atualizado')}catch(_){toast('Não foi possível ler essa imagem')}
 });
