@@ -477,7 +477,7 @@ async function sbPush(){
     const q=pend();for(const id of part)if(q[id]===p[id])delete q[id];jset(PKEY,q)}}
 async function sbCfg(){
   const a=(await rest('empresa?select=atualizado'))[0]?.atualizado||0,m=cfg.atualizado||0;
-  if(a>m){const d=(await rest('empresa?select=dados'))[0].dados;cfg={...CFG0,...d,atualizado:a};try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(tab==='clientes')renderTab()}
+  if(a>m){const d=(await rest('empresa?select=dados'))[0].dados;cfg={...CFG0,...d,atualizado:a};try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(catAplicar()){renderDefaults();renderAll();save()}else renderTab()}
   else if(m>a)await rest('empresa',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({user_id:sess.uid,dados:cfg,atualizado:m})})}
 const sbMsg=e=>e instanceof TypeError?'Sem internet agora — tente de novo':/invalid login/i.test(e.message)?'E-mail ou senha incorretos':/already registered|already exists/i.test(e.message)?'Esse e-mail já tem conta — use Entrar':/not confirmed/i.test(e.message)?'Confirme o e-mail pelo link que chegou na sua caixa de entrada':/password/i.test(e.message)?'Senha fraca — use pelo menos 6 caracteres':'Não foi possível entrar: '+e.message;
 async function sbEntrar(novo){
@@ -521,8 +521,16 @@ window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
     renderLista();renderSync()},()=>{cloud=null;db=null;renderSync()});
 });
 // empty budget that keeps the stones, prices and settings of k
-function blankFrom(k){return{...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:k.materials,defMat:k.materials[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,chapaW:k.chapaW,chapaH:k.chapaH,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep}}
+// stones and prices are one list for the company (cfg.pedras, synced with the company data); each budget keeps its own copy
+function catSalvar(rmId){const c=(cfg.pedras||[]).filter(p=>p.id!==rmId);if(!rmId)for(const m of S.materials){const i=c.findIndex(p=>p.id===m.id);if(i<0)c.push({...m});else c[i]={...m}}cfg.pedras=c;saveCfg()}
+// bring the company list into the open budget: an empty budget takes it whole, a drawn one only gains the new stones
+function catAplicar(){const c=cfg.pedras;if(!c||!c.length)return false;const antes=JSON.stringify(S.materials);
+  if(!S.shapes.length)S.materials=JSON.parse(JSON.stringify(c));else for(const p of c)if(!S.materials.some(m=>m.id===p.id))S.materials.push({...p});
+  if(!S.materials.some(m=>m.id===S.defMat))S.defMat=S.materials[0]?.id;return JSON.stringify(S.materials)!==antes}
+function blankFrom(k){const mats=cfg.pedras?.length?JSON.parse(JSON.stringify(cfg.pedras)):k.materials;return{...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:mats,defMat:mats[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,chapaW:k.chapaW,chapaH:k.chapaH,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep}}
 let S=load();S=blankFrom(S||sample());
+// first run of the shared stone list: a device whose stones differ from the example sends its list up
+if(!cfg.pedras&&JSON.stringify(S.materials)!==JSON.stringify(sample().materials))catSalvar();
 let view={x:-40,y:-40,scale:2};
 let tool='select',selId=null,tab=S.shapes.length?'resumo':'clientes';
 let undoStack=[];
@@ -1331,7 +1339,7 @@ function renderTab(){
       ${(cfg.itens||[]).map((it,i)=>`<div class="it" data-it="${i}"><input id="it-n-${i}" type="text" data-itf="nome" value="${esc(it.nome)}" aria-label="Nome do item"><input id="it-p-${i}" type="number" data-itf="preco" min="0" step="5" value="${it.preco}" aria-label="Preço"><button class="x" data-itrm="${i}" aria-label="Remover item">✕</button></div>`).join('')}
       </div><div class="actions"><button class="btn" id="addIt">+ Item</button></div>`,false,(cfg.itens||[]).length+' itens');
     $('#allMatBtn').onclick=()=>{const id=$('#allMat').value;pushUndo();for(const k of pieces())k.material=id;S.defMat=id;renderDefaults();renderAll();save();toast('Todas as peças agora em '+(S.materials.find(m=>m.id===id)?.name||''))};
-    $('#addMat').onclick=()=>{pushUndo();S.materials.push({id:uid(),name:'Novo material',color:'#9C8F7E',price:0});renderAll();save()};
+    $('#addMat').onclick=()=>{pushUndo();S.materials.push({id:uid(),name:'Novo material',color:'#9C8F7E',price:0});renderAll();save();catSalvar()};
   }
 }
 const tb=$('#tabbody');
@@ -1340,15 +1348,15 @@ tb.addEventListener('input',e=>{
   const t=e.target;
   if(t.dataset.itf){const it=cfg.itens[+t.closest('[data-it]').dataset.it];it[t.dataset.itf]=t.dataset.itf==='preco'?+t.value:t.value;saveCfg();return}
   if(t.dataset.o){S[t.dataset.o]=t.type==='checkbox'?t.checked:+t.value;renderTop();renderCanvas();renderMetrics();save();return}
-  if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(!m)return;m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save()}
+  if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(!m)return;m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save();catSalvar()}
 });
-tb.addEventListener('change',e=>{if(pending){pushUndo(pending);pending=null}const t=e.target;if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(m){m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save()}}if(t.dataset.o==='discountCuts'||t.dataset.o==='snap'){S[t.dataset.o]=t.type==='checkbox'?t.checked:+t.value;t.blur();renderTab();renderTop();save()}});
+tb.addEventListener('change',e=>{if(pending){pushUndo(pending);pending=null}const t=e.target;if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(m){m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save();catSalvar()}}if(t.dataset.o==='discountCuts'||t.dataset.o==='snap'){S[t.dataset.o]=t.type==='checkbox'?t.checked:+t.value;t.blur();renderTab();renderTop();save()}});
 tb.addEventListener('focusout',e=>{setTimeout(()=>{if(!tb.contains(document.activeElement))renderTab()},0)});
 tb.addEventListener('click',e=>{
   const ir=e.target.closest('[data-itrm]');if(ir){cfg.itens.splice(+ir.dataset.itrm,1);saveCfg();renderTab();return}
   if(e.target.closest('#addIt')){(cfg.itens=cfg.itens||[]).push({nome:'Novo item',preco:0});saveCfg();renderTab();return}
   const rm=e.target.closest('[data-rm]');
-  if(rm){if(S.materials.length<=1){toast('Mantenha pelo menos um material');return}const used=pieces().some(s=>s.material===rm.dataset.rm);if(used){toast('Material em uso — troque as peças antes de remover');return}pushUndo();S.materials=S.materials.filter(m=>m.id!==rm.dataset.rm);renderAll();save();return}
+  if(rm){if(S.materials.length<=1){toast('Mantenha pelo menos um material');return}const used=pieces().some(s=>s.material===rm.dataset.rm);if(used){toast('Material em uso — troque as peças antes de remover');return}pushUndo();S.materials=S.materials.filter(m=>m.id!==rm.dataset.rm);renderAll();save();catSalvar(rm.dataset.rm);return}
   const row=e.target.closest('tr.row[data-id]');
   if(row){selId=row.dataset.id;multi.clear();const s=byId(selId);const[cx,cy]=center(s);view.x=cx-svg.clientWidth/2/view.scale;view.y=cy-svg.clientHeight/2/view.scale;renderAll()}
 });
