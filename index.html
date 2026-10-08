@@ -439,12 +439,15 @@ let cfgT;function saveCfg(){const now=Date.now();
   cfgPrev=cpy(cfg);cfg.atualizado=now;try{localStorage.setItem(CKEY,JSON.stringify(cfg));localStorage.setItem(DKEY,now)}catch(e){}
   clearTimeout(cfgT);cfgT=setTimeout(()=>{db&&db.doc('config/empresa').set({...cfg}).catch(()=>{});sbSync()},1000)}
 const nomeK=s=>(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
-// stones: union of both lists; the newer edit of a stone wins, a removal wins over older edits, same name counts as the same stone
+// stones: union of both lists; the newer edit of a stone wins, a removal wins over older edits.
+// Same name counts as the same stone only for stones from before edit times (t<=1: the example stones of each device);
+// two stones really created or edited on the devices always stay, even with the same name
 function mergePedras(A,B,DA,DB){
   const del={...(DA||{})};for(const[k,v]of Object.entries(DB||{}))del[k]=Math.max(del[k]||0,v);
   const by={};for(const p of[...(A||[]),...(B||[])]){const o=by[p.id];if(!o||(p.t||0)>(o.t||0))by[p.id]=p}
-  const nm={};for(const p of Object.values(by)){if(del[p.id]&&del[p.id]>=(p.t||0))continue;const k=nomeK(p.name),o=nm[k];if(!o||(p.t||0)>(o.t||0))nm[k]=p}
-  return{pedras:Object.values(nm),pedrasDel:del}}
+  const nm={},outras=[];for(const p of Object.values(by)){if(del[p.id]&&del[p.id]>=(p.t||0))continue;const k=nomeK(p.name),o=nm[k];
+    if(!o)nm[k]=p;else if((p.t||0)<=1||(o.t||0)<=1){if((p.t||0)>(o.t||0))nm[k]=p}else outras.push(p)}
+  return{pedras:[...Object.values(nm),...outras],pedrasDel:del}}
 function mergeCfg(R,L){
   const tR=stampOf(R),tL=stampOf(L),o={},t={};
   for(const k of new Set([...Object.keys(R),...Object.keys(L)])){if(CFG_META.includes(k))continue;
@@ -1311,7 +1314,7 @@ function renderDefaults(){
 $('#projName').addEventListener('input',e=>{S.name=e.target.value;save()});
 $('#defType').addEventListener('change',e=>{S.defType=e.target.value;save()});
 $('#defMat').addEventListener('change',e=>{S.defMat=e.target.value;save()});
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===b));renderTab()});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{if($('#tabbody').contains(document.activeElement))document.activeElement.blur();tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===b));renderTab()});
 
 /* ---------- tab sections: icon + title + one-line summary, open/closed remembered ---------- */
 const ICO={
@@ -1429,7 +1432,11 @@ function renderTab(){
       ${(cfg.itens||[]).map((it,i)=>`<div class="it" data-it="${i}"><input id="it-n-${i}" type="text" data-itf="nome" value="${esc(it.nome)}" aria-label="Nome do item"><input id="it-p-${i}" type="number" data-itf="preco" min="0" step="5" value="${it.preco}" aria-label="Preço"><button class="x" data-itrm="${i}" aria-label="Remover item">✕</button></div>`).join('')}
       </div><div class="actions"><button class="btn" id="addIt">+ Item</button></div>`,false,(cfg.itens||[]).length+' itens');
     $('#allMatBtn').onclick=()=>{const id=$('#allMat').value;pushUndo();for(const k of pieces())k.material=id;S.defMat=id;renderDefaults();renderAll();save();toast('Todas as peças agora em '+(S.materials.find(m=>m.id===id)?.name||''))};
-    $('#addMat').onclick=()=>{pushUndo();S.materials.push({id:uid(),name:'Novo material',color:'#9C8F7E',price:0});renderAll();save();catSalvar()};
+    $('#addMat').onclick=()=>{pushUndo();
+      // a name not used yet ("Nova pedra 2"…), then the name field ready to type
+      const usados=new Set([...S.materials,...(cfg.pedras||[])].map(m=>nomeK(m.name)));let n=1;while(usados.has(nomeK('Nova pedra'+(n>1?' '+n:''))))n++;
+      const id=uid();S.materials.push({id,name:'Nova pedra'+(n>1?' '+n:''),color:'#9C8F7E',price:0});renderAll();save();catSalvar();
+      const i=$('#mn-'+id);if(i){i.focus();i.select()}};
   }
 }
 const tb=$('#tabbody');
