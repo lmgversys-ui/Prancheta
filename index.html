@@ -202,6 +202,10 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
 .modal[hidden]{display:none}
 .sheet{background:var(--panel);border-radius:16px;width:100%;max-width:600px;max-height:calc(100% - 16px);overflow:auto;padding:18px;box-shadow:var(--shadow)}
 .sheet h2{margin:0 0 4px;font-size:18px}
+.rvjbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:var(--panel2);margin-top:10px;font-size:14px}.rvjbar span{flex:1 1 200px}
+.rv.grp{background:color-mix(in srgb,var(--accent) 7%,transparent);border-radius:10px;padding:10px 8px;margin-top:4px}
+.rv .sel{grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink);cursor:pointer}.rv .sel input{width:20px;height:20px;accent-color:var(--accent)}
+.lnk{border:0;background:none;color:var(--accent);text-decoration:underline;cursor:pointer;padding:0;font:inherit}
 .rvopts{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:12px}.rvopts label{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink);cursor:pointer}.rvopts input{width:18px;height:18px;accent-color:var(--accent)}
 .prbtns{display:flex;flex-direction:column;gap:10px;margin:16px 0 6px}.prbtns .btn{justify-content:center;padding:12px;font-size:15px}.prbtns .btn svg{width:20px;height:20px}
 .btn.wa{background:#1FA855;border-color:#1FA855;color:#fff}
@@ -359,8 +363,9 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
 <div class="modal" id="review" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rvTitle">
   <h2 id="rvTitle">Revisar antes do PDF</h2>
   <p class="hint">Ajuste a descrição, a pedra e o valor de cada item. Fica salvo neste orçamento.</p>
+  <div class="rvjbar" id="rvJbar" hidden><span>Marque os itens que vão virar um só no PDF</span><button class="btn primary" id="rvJok" disabled>Juntar</button><button class="btn" id="rvJno">Cancelar</button></div>
   <div id="rvRows"></div>
-  <div class="actions"><button class="btn" id="rvAdd">+ Adicionar item</button><button class="btn" id="rvReset">Voltar aos valores do desenho</button></div>
+  <div class="actions"><button class="btn" id="rvAdd">+ Adicionar item</button><button class="btn" id="rvJunta">Juntar itens em um só</button><button class="btn" id="rvReset">Voltar aos valores do desenho</button></div>
   <div class="actions"><select id="rvItem" aria-label="Adicionar item da tabela" style="flex:1"></select></div>
   <div class="rvopts"><label><input type="checkbox" id="rvDes"> Incluir o desenho das peças</label><label><input type="checkbox" id="rvCurto"> Só a primeira medida (sem largura nem altura)</label></div>
   <div class="fields rvpay">
@@ -1667,23 +1672,46 @@ async function exportOs(){
 
 /* ---------- review before PDF ---------- */
 // lines that go to the PDF: the ones from the drawing, with this budget's edits, plus extra items typed by hand
-function pdfLines(){
+// lines of the PDF: one per piece (or loose cutout) and the extra items; then the groups made on the review sheet
+// replace their members by one line with the summed value (a group can also hold another group)
+function rvItens(){
   const ed=S.pdfEdit||{},gen=serviceLines(calc(),1+(+S.lossPct||0)/100);
-  return[...gen.map(l=>({...l,...ed[l.key]})).filter(l=>!l.hide),...(S.pdfExtra||[])];
-}
+  let rows=[...gen.filter(l=>!(ed[l.key]||{}).hide).map(l=>({k:l.key,id:l.key,auto:l,cur:{...l,...ed[l.key]}})),
+    ...(S.pdfExtra||[]).map((l,i)=>({k:'x'+i,id:'e:'+(l.id||(l.id=uid())),cur:l}))];
+  for(const g of S.pdfGrupos||[]){
+    const ms=rows.filter(r=>g.ids.includes(r.id));if(!ms.length)continue;
+    const auto={desc:g.desc,mat:[...new Set(ms.map(r=>r.cur.mat).filter(Boolean))].join(' / '),price:ms.reduce((a,r)=>a+(+r.cur.price||0),0)};
+    const at=rows.indexOf(ms[0]);rows=rows.filter(r=>!ms.includes(r));
+    rows.splice(at,0,{k:'g:'+g.id,id:'g:'+g.id,grupo:g,membros:ms,auto,cur:{...auto,...ed['g:'+g.id]}})}
+  return rows}
+function pdfLines(){return rvItens().map(r=>r.cur)}
 const parseMoney=v=>{const t=String(v).replace(/[^\d,.-]/g,'');return+(t.includes(',')?t.replace(/\./g,'').replace(',','.'):t)||0};
+let rvJunta=false,rvSel=new Set();
+// short name of a line for the group text: the piece name, without the measures
+const nomeItem=r=>r.auto&&!r.grupo?r.cur.desc.split(' - ')[0]:r.cur.desc;
 function renderReview(){
-  const ed=S.pdfEdit||{},gen=serviceLines(calc(),1+(+S.lossPct||0)/100);
-  const rows=[...gen.filter(l=>!(ed[l.key]||{}).hide).map(l=>({k:l.key,auto:l,cur:{...l,...ed[l.key]}})),...(S.pdfExtra||[]).map((l,i)=>({k:'x'+i,cur:l}))];
-  $('#rvRows').innerHTML=rows.length?rows.map(r=>`<div class="rv" data-k="${esc(r.k)}">
+  const rows=rvItens();rvSel=new Set([...rvSel].filter(id=>rows.some(r=>r.id===id)));
+  $('#rvRows').innerHTML=rows.length?rows.map(r=>`<div class="rv${r.grupo?' grp':''}" data-k="${esc(r.k)}" data-id="${esc(r.id)}">
+    ${rvJunta?`<label class="sel"><input type="checkbox" data-sel${rvSel.has(r.id)?' checked':''}> ${esc(nomeItem(r))}</label>`:''}
     <textarea data-f="desc" rows="2" aria-label="Descrição">${esc(r.cur.desc)}</textarea>
     <input class="price" data-f="price" type="text" inputmode="decimal" value="${f2(r.cur.price)}" aria-label="Valor em reais">
-    <button class="x" data-rm aria-label="Tirar este item do PDF">✕</button>
+    ${r.grupo?`<button class="x" data-sep aria-label="Separar este grupo" title="Separar">⤺</button>`:`<button class="x" data-rm aria-label="Tirar este item do PDF">✕</button>`}
     <input class="mat" data-f="mat" type="text" value="${esc(r.cur.mat)}" placeholder="Pedra / observação" aria-label="Pedra">
-    ${r.auto&&(r.cur.desc!==r.auto.desc||Math.abs(r.cur.price-r.auto.price)>.004||r.cur.mat!==r.auto.mat)?`<small>Editado — valor do desenho: ${money(r.auto.price)}</small>`:''}
+    ${r.grupo?`<small>Junta ${r.membros.length} itens: ${esc(r.membros.map(nomeItem).join(', '))}${Math.abs(r.cur.price-r.auto.price)>.004?' · soma dos itens: '+money(r.auto.price):''} — <button class="lnk" data-sep>separar</button></small>`
+      :r.auto&&(r.cur.desc!==r.auto.desc||Math.abs(r.cur.price-r.auto.price)>.004||r.cur.mat!==r.auto.mat)?`<small>Editado — valor do desenho: ${money(r.auto.price)}</small>`:''}
   </div>`).join(''):'<p class="empty">Nenhum item. Use "+ Adicionar item".</p>';
+  $('#rvJbar').hidden=!rvJunta;$('#rvJok').disabled=rvSel.size<2;$('#rvJok').textContent=rvSel.size>=2?'Juntar '+rvSel.size+' itens':'Juntar';$('#rvJunta').hidden=rvJunta||rows.length<2;
   renderReviewTotal();
 }
+$('#rvJunta').onclick=()=>{rvJunta=true;rvSel.clear();renderReview()};
+$('#rvJno').onclick=()=>{rvJunta=false;rvSel.clear();renderReview()};
+$('#rvJok').onclick=()=>{
+  const rows=rvItens(),ms=rows.filter(r=>rvSel.has(r.id));if(ms.length<2)return;
+  const n=ms.map(nomeItem),g={id:uid(),ids:ms.map(r=>r.id),desc:n.length>1?n.slice(0,-1).join(', ')+' e '+n[n.length-1]:n[0]};
+  (S.pdfGrupos=S.pdfGrupos||[]).push(g);rvJunta=false;rvSel.clear();save();renderReview();
+  // ready to type a name like "Cozinha completa"
+  const t=$('#rvRows').querySelector('[data-k="g:'+g.id+'"] textarea');if(t){t.focus();t.select()}
+  toast('Itens juntados — dê um nome para esta linha do PDF')};
 const renderReviewTotal=()=>{const t=pdfTotals(),c=condicao(t);$('#rvSub').textContent=(t.dv?'Subtotal '+money(t.sub)+' − desconto '+money(t.dv):'Total do PDF')+(c?' · '+c:'');$('#rvTotal').textContent=money(t.total)};
 function fillPay(){$('#rvDes').checked=S.pdfDesenho??cfg.desenho;$('#rvCurto').checked=!!S.pdfCurto;const d=S.desconto||{};$('#rvDesc').value=d.valor?f2(d.valor):'';$('#rvDescT').value=d.tipo==='%'?'%':'R$';$('#rvEnt').value=S.entrada?f2(S.entrada):'';$('#rvParc').value=S.parcelas||'';
   $('#rvItem').innerHTML='<option value="">+ Item da tabela…</option>'+(cfg.itens||[]).map((it,i)=>`<option value="${i}">${esc(it.nome)} — ${money(it.preco)}</option>`).join('')}
@@ -1695,17 +1723,20 @@ $('#rvCurto').onchange=e=>{S.pdfCurto=e.target.checked;save();renderReview();
   const n=Object.values(S.pdfEdit||{}).filter(x=>x.desc!=null&&!x.hide).length;if(n)toast(n+(n>1?' itens com descrição editada continuam':' item com descrição editada continua')+' como você escreveu — use “Voltar aos valores do desenho” se quiser')};
 $('#rvOs').onclick=()=>{rv.hidden=true;exportOs()};
 const rv=$('#review');
-$('#pdfBtn').onclick=()=>{flush();fillPay();renderReview();rv.hidden=false};
+$('#pdfBtn').onclick=()=>{flush();rvJunta=false;rvSel.clear();fillPay();renderReview();rv.hidden=false};
 $('#rvCancel').onclick=()=>{rv.hidden=true};
 rv.addEventListener('click',e=>{if(e.target===rv)rv.hidden=true});
 $('#rvGo').onclick=()=>{rv.hidden=true;exportPdf()};
 $('#rvAdd').onclick=()=>{(S.pdfExtra=S.pdfExtra||[]).push({desc:'',mat:'',price:0});save();renderReview();const t=[...$('#rvRows').querySelectorAll('textarea')].pop();t&&t.focus()};
-$('#rvReset').onclick=()=>{S.pdfEdit={};S.pdfExtra=[];save();renderReview();toast('Itens voltaram aos valores do desenho')};
+$('#rvReset').onclick=()=>{S.pdfEdit={};S.pdfExtra=[];S.pdfGrupos=[];save();renderReview();toast('Itens voltaram aos valores do desenho')};
 // edit a field: generated lines keep their edits in S.pdfEdit[key], extra lines live in S.pdfExtra
 function rvSet(row,f,v){const k=row.dataset.k;if(k[0]==='x'&&/^x\d+$/.test(k))(S.pdfExtra[+k.slice(1)]||{})[f]=v;else{S.pdfEdit=S.pdfEdit||{};S.pdfEdit[k]={...S.pdfEdit[k],[f]:v}}save()}
 $('#rvRows').addEventListener('input',e=>{const row=e.target.closest('.rv'),f=e.target.dataset.f;if(!row||!f)return;rvSet(row,f,f==='price'?parseMoney(e.target.value):e.target.value);renderReviewTotal()});
 $('#rvRows').addEventListener('change',e=>{if(e.target.dataset.f==='price')renderReview()});
-$('#rvRows').addEventListener('click',e=>{const b=e.target.closest('[data-rm]');if(!b)return;const k=b.closest('.rv').dataset.k;if(/^x\d+$/.test(k))S.pdfExtra.splice(+k.slice(1),1);else rvSet(b.closest('.rv'),'hide',true);renderReview()});
+$('#rvRows').addEventListener('change',e=>{if(e.target.dataset.sel==null)return;const id=e.target.closest('.rv').dataset.id;if(e.target.checked)rvSel.add(id);else rvSel.delete(id);$('#rvJok').disabled=rvSel.size<2;$('#rvJok').textContent=rvSel.size>=2?'Juntar '+rvSel.size+' itens':'Juntar'});
+$('#rvRows').addEventListener('click',e=>{
+  const sp=e.target.closest('[data-sep]');if(sp){const k=sp.closest('.rv').dataset.k,id=k.slice(2);S.pdfGrupos=(S.pdfGrupos||[]).filter(g=>g.id!==id);if(S.pdfEdit)delete S.pdfEdit[k];save();renderReview();return}
+  const b=e.target.closest('[data-rm]');if(!b)return;const k=b.closest('.rv').dataset.k;if(/^x\d+$/.test(k))S.pdfExtra.splice(+k.slice(1),1);else rvSet(b.closest('.rv'),'hide',true);renderReview()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!rv.hidden){rv.hidden=true}});
 $('#copyCsv').onclick=()=>{
   const c=calc(),q=v=>`"${String(v).replace(/"/g,'""')}"`,row=a=>a.map(q).join(';'),loss=1+(+S.lossPct||0)/100;
