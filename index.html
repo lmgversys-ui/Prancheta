@@ -181,7 +181,7 @@ tr.row.on td{background:var(--accent-soft)}
 .sec2[open] .chev{transform:rotate(180deg)}
 .sec2 .sb{padding:2px 2px 16px}
 .grand{margin:8px 0 6px}
-.tab svg,.foot .btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.tab svg,.foot .btn svg,.prbtns .btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .tab{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;font-size:13px;padding:8px 2px}
 .tab svg{color:var(--tc)}
 @media (max-width:900px){.tab{font-size:12.5px}.tabs{padding-inline:4px}}
@@ -202,6 +202,8 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
 .modal[hidden]{display:none}
 .sheet{background:var(--panel);border-radius:16px;width:100%;max-width:600px;max-height:calc(100% - 16px);overflow:auto;padding:18px;box-shadow:var(--shadow)}
 .sheet h2{margin:0 0 4px;font-size:18px}
+.prbtns{display:flex;flex-direction:column;gap:10px;margin:16px 0 6px}.prbtns .btn{justify-content:center;padding:12px;font-size:15px}.prbtns .btn svg{width:20px;height:20px}
+.btn.wa{background:#1FA855;border-color:#1FA855;color:#fff}
 .rv{display:grid;grid-template-columns:minmax(0,1fr) 112px 34px;gap:6px 8px;padding:10px 0;border-bottom:1px solid var(--line);align-items:start}
 .rv textarea{grid-column:1;min-height:46px}
 .rv .mat{grid-column:1}
@@ -366,6 +368,15 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
   </div>
   <div class="rvtotal"><span id="rvSub">Total do PDF</span><b id="rvTotal"></b></div>
   <div class="actions" style="justify-content:flex-end"><button class="btn" id="rvOs">OS para oficina (sem preços)</button><button class="btn" id="rvCancel">Cancelar</button><button class="btn primary" id="rvGo">Gerar PDF</button></div>
+</div></div>
+<div class="modal" id="pronto" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="prTitle" style="max-width:420px">
+  <h2 id="prTitle">PDF pronto</h2><p class="hint" id="prSub"></p>
+  <div class="prbtns">
+    <button class="btn wa" id="prWa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 8.6c.3 2.6 2.3 5 5.2 6l1.3-1.3 2 1-.4 1.6c-3.9.4-8.6-4-8.3-8.2L10.4 7l1 2z"/></svg>Enviar pelo WhatsApp</button>
+    <button class="btn" id="prMail"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6 8.5-6"/></svg>Enviar por e-mail</button>
+    <button class="btn" id="prSave"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Salvar no aparelho</button>
+  </div>
+  <div class="actions" style="justify-content:flex-end"><button class="btn" id="prClose">Fechar</button></div>
 </div></div>
 
 <script>
@@ -1568,8 +1579,28 @@ async function exportPdf(){
   need(32);y=Math.max(y,PH-M-30);doc.setDrawColor(200,204,208);doc.setLineWidth(.4);doc.line(M,y,R,y);y+=7;
   put(cfg.resp,M+3,y,10,'normal',MUT);if(cfg.cnpj)put('CNPJ: '+cfg.cnpj,M+3,y+5.5,10,'normal',MUT);const fy=contacts(MID,y);socials(M+3,Math.max(fy,y+12)+2);
   if(!S.status||S.status==='Rascunho'){S.status='Enviado';save()}
-  await saveFile('Orçamento '+S.num+' '+(S.name||'sem nome'),doc.output('blob'),'pdf');
+  const cli=(S.name||'').split(' — ')[0].trim();
+  abrirPronto({nome:'Orçamento '+S.num+' '+(S.name||'sem nome'),blob:doc.output('blob'),tel:S.tel,
+    titulo:'Orçamento nº '+S.num+' pronto',sub:(S.name||'Sem nome')+' · '+money(total),assunto:'Orçamento nº '+S.num+' — '+cfg.nome,
+    msg:'Olá'+(cli?' '+cli:'')+'! Segue o orçamento nº '+S.num+' — '+cfg.nome+'.\nTotal: '+money(total)+(cond?' ('+cond+')':'')+'.'+(+cfg.validade?'\nVálido por '+cfg.validade+' dias.':'')+'\nQualquer dúvida, estou à disposição.'});
 }
+/* ---------- PDF ready: send by WhatsApp / e-mail, or save ---------- */
+// the phone's share menu gets the PDF itself attached; where there is none (some computers) the file is saved
+// and WhatsApp / the e-mail opens with the message ready, to attach it there
+let pronto=null;const pr=$('#pronto');
+function abrirPronto(o){pronto=o;$('#prTitle').textContent=o.titulo;$('#prSub').textContent=o.sub;pr.hidden=false}
+const arqPdf=o=>o.nome.replace(/[\\/:*?"<>|]+/g,'-').slice(0,120)+'.pdf';
+async function enviarPdf(via){
+  const o=pronto;if(!o)return;const f=new File([o.blob],arqPdf(o),{type:'application/pdf'});
+  let pode=false;try{pode=!!navigator.canShare&&navigator.canShare({files:[f]})}catch(e){}
+  if(pode)try{await navigator.share({files:[f],title:o.assunto,text:o.msg});pr.hidden=true;return}catch(e){if(e.name==='AbortError')return}
+  await saveFile(o.nome,o.blob,'pdf');
+  if(via==='wa'){const d=(o.tel||'').replace(/\D/g,''),n=d.length===10||d.length===11?'55'+d:d;window.open('https://wa.me/'+n+'?text='+encodeURIComponent(o.msg),'_blank');toast('PDF salvo — anexe na conversa do WhatsApp')}
+  else{location.href='mailto:?subject='+encodeURIComponent(o.assunto)+'&body='+encodeURIComponent(o.msg);toast('PDF salvo — anexe no e-mail')}
+}
+$('#prWa').onclick=()=>enviarPdf('wa');$('#prMail').onclick=()=>enviarPdf('mail');
+$('#prSave').onclick=async()=>{if(pronto)await saveFile(pronto.nome,pronto.blob,'pdf');pr.hidden=true};
+$('#prClose').onclick=()=>{pr.hidden=true};pr.addEventListener('click',e=>{if(e.target===pr)pr.hidden=true});
 /* ---------- discount, down payment, installments ---------- */
 // what the client pays: reviewed lines minus discount; entrada + parcelas of the rest
 function pdfTotals(){
@@ -1624,7 +1655,7 @@ async function exportOs(){
   }
   if(pieces().length){try{const d=await drawingPng(),iw=R-M,ih=Math.min(150,iw*d.h/d.w),w2=ih*d.w/d.h;need(ih+12);y+=2;put('Desenho',M,y,12,'bold',TEAL);y+=3;doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y,w2,ih);y+=ih+4}catch(e){}}
   if(S.obs&&S.obs.trim()){need(14);put('Observações',M,y,12,'bold',TEAL);y+=6;for(const l of doc.splitTextToSize(T(S.obs),R-M)){need(5);put(l,M,y,10.5);y+=4.6}}
-  await saveFile('OS '+(S.num||'')+' '+(S.name||'sem nome'),doc.output('blob'),'pdf');
+  abrirPronto({nome:'OS '+(S.num||'')+' '+(S.name||'sem nome'),blob:doc.output('blob'),tel:'',titulo:'OS para oficina pronta',sub:S.name||'Sem nome',assunto:'OS '+(S.num?'do orçamento nº '+S.num+' ':'')+'— '+(S.name||'sem nome'),msg:'OS para a oficina'+(S.num?' — orçamento nº '+S.num:'')+' — '+(S.name||'sem nome')+'.'});
 }
 
 /* ---------- review before PDF ---------- */
