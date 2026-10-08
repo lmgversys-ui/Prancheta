@@ -427,7 +427,29 @@ const CFG0={nome:'Bella Vista',resp:'LEANDRO DE MORAES GARCIA MEi',cnpj:'15.390.
   itens:[{nome:'Cuba inox',preco:250},{nome:'Válvula',preco:25},{nome:'Instalação',preco:300},{nome:'Frete',preco:80}],
   desenho:true,logo:LOGO0,atualizado:0};
 let cfg={...CFG0};try{Object.assign(cfg,JSON.parse(localStorage.getItem(CKEY))||{})}catch(e){}
-let cfgT;function saveCfg(){cfg.atualizado=Date.now();try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}clearTimeout(cfgT);cfgT=setTimeout(()=>{db&&db.doc('config/empresa').set({...cfg}).catch(()=>{});sbSync()},1000)}
+// each company field carries its own edit time (cfg._t) so devices merge field by field instead of overwriting
+const CFG_META=['_t','pedras','pedrasDel','atualizado'],DKEY='prancheta-sb-cfgsujo',VKEY='prancheta-sb-cfgvisto';
+const cpy=o=>JSON.parse(JSON.stringify(o));
+// fields changed from the defaults count as edited at the last save (data saved before field times existed)
+const stampOf=X=>X._t||Object.fromEntries(Object.keys(X).filter(k=>!CFG_META.includes(k)&&JSON.stringify(X[k])!==JSON.stringify(CFG0[k])).map(k=>[k,X.atualizado||1]));
+if(!cfg._t)cfg._t=stampOf(cfg);
+let cfgPrev=cpy(cfg);
+let cfgT;function saveCfg(){const now=Date.now();
+  for(const k of Object.keys(cfg))if(!CFG_META.includes(k)&&JSON.stringify(cfg[k])!==JSON.stringify(cfgPrev[k]))cfg._t[k]=now;
+  cfgPrev=cpy(cfg);cfg.atualizado=now;try{localStorage.setItem(CKEY,JSON.stringify(cfg));localStorage.setItem(DKEY,now)}catch(e){}
+  clearTimeout(cfgT);cfgT=setTimeout(()=>{db&&db.doc('config/empresa').set({...cfg}).catch(()=>{});sbSync()},1000)}
+const nomeK=s=>(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+// stones: union of both lists; the newer edit of a stone wins, a removal wins over older edits, same name counts as the same stone
+function mergePedras(A,B,DA,DB){
+  const del={...(DA||{})};for(const[k,v]of Object.entries(DB||{}))del[k]=Math.max(del[k]||0,v);
+  const by={};for(const p of[...(A||[]),...(B||[])]){const o=by[p.id];if(!o||(p.t||0)>(o.t||0))by[p.id]=p}
+  const nm={};for(const p of Object.values(by)){if(del[p.id]&&del[p.id]>=(p.t||0))continue;const k=nomeK(p.name),o=nm[k];if(!o||(p.t||0)>(o.t||0))nm[k]=p}
+  return{pedras:Object.values(nm),pedrasDel:del}}
+function mergeCfg(R,L){
+  const tR=stampOf(R),tL=stampOf(L),o={},t={};
+  for(const k of new Set([...Object.keys(R),...Object.keys(L)])){if(CFG_META.includes(k))continue;
+    o[k]=!(k in R)||(k in L&&(tL[k]||0)>(tR[k]||0))?L[k]:R[k];const m=Math.max(tL[k]||0,tR[k]||0);if(m)t[k]=m}
+  return{...o,_t:t,...mergePedras(R.pedras,L.pedras,R.pedrasDel,L.pedrasDel)}}
 const localList=()=>{try{return JSON.parse(localStorage.getItem(LKEY))||{}}catch(e){return{}}};
 let db=null,cloud=null,cloudQ=Promise.resolve(),lastSync=0,syncErr='';
 /* ---------- Supabase: login + sync of budgets and company data ---------- */
@@ -476,9 +498,12 @@ async function sbPush(){
     await rest('orcamentos',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(part.map(row))});
     const q=pend();for(const id of part)if(q[id]===p[id])delete q[id];jset(PKEY,q)}}
 async function sbCfg(){
-  const a=(await rest('empresa?select=atualizado'))[0]?.atualizado||0,m=cfg.atualizado||0;
-  if(a>m){const d=(await rest('empresa?select=dados'))[0].dados;cfg={...CFG0,...d,atualizado:a};try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(catAplicar()){renderDefaults();renderAll();save()}else renderTab()}
-  else if(m>a)await rest('empresa',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({user_id:sess.uid,dados:cfg,atualizado:m})})}
+  const a=(await rest('empresa?select=atualizado'))[0]?.atualizado||0,sujo=localStorage.getItem(DKEY);
+  if(a===+localStorage.getItem(VKEY)&&!sujo)return;
+  const R=a?(await rest('empresa?select=dados'))[0].dados:{},M=mergeCfg(R,cfg),sem=o=>{const{atualizado,...r}=o;return JSON.stringify(r)};
+  if(sem(M)!==sem(cfg)){cfg={...CFG0,...M,atualizado:Date.now()};cfgPrev=cpy(cfg);try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(catAplicar()){renderDefaults();renderAll();save()}else renderTab()}
+  let v=a;if(!a||sem(M)!==sem(R)){v=Date.now();await rest('empresa',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({user_id:sess.uid,dados:M,atualizado:v})})}
+  try{localStorage.setItem(VKEY,v);if(localStorage.getItem(DKEY)===sujo)localStorage.removeItem(DKEY)}catch(e){}}
 const sbMsg=e=>e instanceof TypeError?'Sem internet agora — tente de novo':/invalid login/i.test(e.message)?'E-mail ou senha incorretos':/already registered|already exists/i.test(e.message)?'Esse e-mail já tem conta — use Entrar':/not confirmed/i.test(e.message)?'Confirme o e-mail pelo link que chegou na sua caixa de entrada':/password/i.test(e.message)?'Senha fraca — use pelo menos 6 caracteres':'Não foi possível entrar: '+e.message;
 async function sbEntrar(novo){
   const email=$('#sb-email').value.trim(),password=$('#sb-senha').value;
@@ -522,7 +547,11 @@ window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
 });
 // empty budget that keeps the stones, prices and settings of k
 // stones and prices are one list for the company (cfg.pedras, synced with the company data); each budget keeps its own copy
-function catSalvar(rmId){const c=(cfg.pedras||[]).filter(p=>p.id!==rmId);if(!rmId)for(const m of S.materials){const i=c.findIndex(p=>p.id===m.id);if(i<0)c.push({...m});else c[i]={...m}}cfg.pedras=c;saveCfg()}
+function catSalvar(rmId){const now=Date.now(),c=cfg.pedras||[],del=cfg.pedrasDel||{};
+  if(rmId){del[rmId]=now;cfg.pedras=c.filter(p=>p.id!==rmId)}
+  else{for(const m of S.materials){const i=c.findIndex(p=>p.id===m.id),o=c[i];
+    if(!o||o.name!==m.name||o.color!==m.color||+o.price!==+m.price){const n={id:m.id,name:m.name,color:m.color,price:m.price,t:now};if(o)c[i]=n;else c.push(n)}}cfg.pedras=c}
+  cfg.pedrasDel=del;saveCfg()}
 // bring the company list into the open budget: an empty budget takes it whole, a drawn one only gains the new stones
 function catAplicar(){const c=cfg.pedras;if(!c||!c.length)return false;const antes=JSON.stringify(S.materials);
   if(!S.shapes.length)S.materials=JSON.parse(JSON.stringify(c));else for(const p of c)if(!S.materials.some(m=>m.id===p.id))S.materials.push({...p});
@@ -530,7 +559,11 @@ function catAplicar(){const c=cfg.pedras;if(!c||!c.length)return false;const ant
 function blankFrom(k){const mats=cfg.pedras?.length?JSON.parse(JSON.stringify(cfg.pedras)):k.materials;return{...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:mats,defMat:mats[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,chapaW:k.chapaW,chapaH:k.chapaH,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep}}
 let S=load();S=blankFrom(S||sample());
 // first run of the shared stone list: a device whose stones differ from the example sends its list up
-if(!cfg.pedras&&JSON.stringify(S.materials)!==JSON.stringify(sample().materials))catSalvar();
+try{if(!localStorage.getItem('prancheta-pedras-rec')){
+  const bs=Object.values(localList()).sort((a,b)=>b.atualizado-a.atualizado),achadas=[...S.materials];
+  for(const b of bs){try{achadas.push(...(JSON.parse(b.estado).materials||[]))}catch(e){}}
+  cfg.pedras=mergePedras(cfg.pedras,achadas.map(p=>({id:p.id,name:p.name,color:p.color,price:p.price,t:p.t||1})),cfg.pedrasDel,{}).pedras;
+  saveCfg();localStorage.setItem('prancheta-pedras-rec','1');catAplicar()}}catch(e){}
 let view={x:-40,y:-40,scale:2};
 let tool='select',selId=null,tab=S.shapes.length?'resumo':'clientes';
 let undoStack=[];
