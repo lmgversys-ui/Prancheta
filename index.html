@@ -377,7 +377,9 @@ const KEY='prancheta-marmoraria-v1';
 // installed app (outside Claude): manifest, offline cache, and ask the phone not to clear our storage
 if(!window.claude&&(location.protocol==='https:'||location.hostname==='localhost')){
   document.head.append(Object.assign(document.createElement('link'),{rel:'manifest',href:'manifest.webmanifest'}));
-  navigator.serviceWorker?.register('sw.js').catch(()=>{});navigator.storage?.persist?.();
+  navigator.serviceWorker?.register('sw.js',{updateViaCache:'none'}).catch(()=>{});navigator.storage?.persist?.();
+  // a new version took over while the old one was open: reload once to show it
+  const hadSw=!!navigator.serviceWorker?.controller;navigator.serviceWorker?.addEventListener('controllerchange',()=>{if(hadSw){flush();location.reload()}});
 }
 try{if(localStorage.getItem('prancheta-tema')==='dark')document.documentElement.dataset.theme='dark'}catch(e){}
 document.getElementById('themeBtn').onclick=()=>{const d=document.documentElement,t=d.dataset.theme==='dark'?'light':'dark';d.dataset.theme=t;try{localStorage.setItem('prancheta-tema',t)}catch(e){}};
@@ -520,7 +522,7 @@ window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
 });
 // empty budget that keeps the stones, prices and settings of k
 function blankFrom(k){return{...sample(),id:uid(),name:'',tel:'',end:'',shapes:[],materials:k.materials,defMat:k.materials[0]?.id,lossPct:k.lossPct,cutPrice:k.cutPrice,chapaW:k.chapaW,chapaH:k.chapaH,snap:k.snap,saiaH:k.saiaH,frontH:k.frontH,angStep:k.angStep}}
-let S=load();S=S?blankFrom(S):sample();
+let S=load();S=blankFrom(S||sample());
 let view={x:-40,y:-40,scale:2};
 let tool='select',selId=null,tab=S.shapes.length?'resumo':'clientes';
 let undoStack=[];
