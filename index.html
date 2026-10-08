@@ -156,6 +156,8 @@ tr.row.on td{background:var(--accent-soft)}
 .opts{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
 .check{display:flex;gap:8px;align-items:center;grid-column:1/-1;font-size:13px}
 .mat{display:grid;grid-template-columns:32px 1fr 92px 30px;gap:6px;align-items:center}
+.mat .acab{grid-column:1/-1;font-size:13px;color:var(--muted);margin:-2px 0 6px}.mat .acab summary{cursor:pointer;padding:2px 0}
+.acabg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:6px}@media (max-width:600px){.acabg{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .mat input[type=color]{width:32px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
 .mat .x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:16px;border-radius:6px;height:30px}
 .mat .x:hover{color:var(--cut);background:var(--panel2)}
@@ -626,7 +628,7 @@ window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
 function catSalvar(rmId){const now=Date.now(),c=cfg.pedras||[],del=cfg.pedrasDel||{};
   if(rmId){del[rmId]=now;cfg.pedras=c.filter(p=>p.id!==rmId)}
   else{for(const m of S.materials){const i=c.findIndex(p=>p.id===m.id),o=c[i];
-    if(!o||o.name!==m.name||o.color!==m.color||+o.price!==+m.price){const n={id:m.id,name:m.name,color:m.color,price:m.price,t:now};if(o)c[i]=n;else c.push(n)}}cfg.pedras=c}
+    if(!o||o.name!==m.name||o.color!==m.color||+o.price!==+m.price||JSON.stringify(o.acab||{})!==JSON.stringify(m.acab||{})){const n={id:m.id,name:m.name,color:m.color,price:m.price,acab:m.acab,t:now};if(o)c[i]=n;else c.push(n)}}cfg.pedras=c}
   cfg.pedrasDel=del;saveCfg()}
 // bring the company list into the open budget: an empty budget takes it whole, a drawn one only gains the new stones
 function catAplicar(){const c=cfg.pedras;if(!c||!c.length)return false;const antes=JSON.stringify(S.materials);
@@ -670,7 +672,11 @@ function undo(){const s=undoStack.pop();if(!s){toast('Nada para desfazer');retur
 
 /* ---------- geometry ---------- */
 const byId=id=>S.shapes.find(s=>s.id===id);
-const matOf=s=>S.materials.find(m=>m.id===s.material)||{name:'Sem material',color:'#9AA0A3',price:0,id:''};
+const ACAB=[['bipolida','Bipolida'],['flameada','Flameada'],['escovada','Escovada'],['levigada','Levigada']];
+const acabNome=k=>(ACAB.find(a=>a[0]===k)||[])[1];
+const matBase=s=>S.materials.find(m=>m.id===s.material)||{name:'Sem material',color:'#9AA0A3',price:0,id:''};
+// finish without its own price uses the stone's price (polida)
+const matOf=s=>{const m=matBase(s),a=acabNome(s.acab);if(!a||!m.id)return m;const pr=+(m.acab||{})[s.acab];return{...m,id:m.id+'|'+s.acab,name:m.name+' — '+a,price:pr>0?pr:m.price,semPreco:!(pr>0)}};
 const pieces=()=>S.shapes.filter(s=>s.kind!=='cut');
 const cuts=()=>S.shapes.filter(s=>s.kind==='cut');
 function bbox(s){
@@ -1203,7 +1209,7 @@ function toggleEdge(kind,i){
   if(ex){pushUndo();S.shapes=S.shapes.filter(o=>o.id!==ex.id);renderAll();save();toast(`${kind} tirado do lado ${j+1}`);return}
   const custom=parseFloat(String(genLen).replace(',','.')),L=custom>0?r1(Math.min(custom,ed.len)):ed.len;
   const t=kind==='Saia'?(+S.saiaH||4):(+S.frontH||10);pushUndo();
-  const base={id:uid(),parent:s.id,edge:i,name:`${kind} ${DIR_NAME[ed.dir].toLowerCase()} ${fcm(L)} — ${s.name}`,type:kind,material:s.material,qty:s.qty||1};
+  const base={id:uid(),parent:s.id,edge:i,name:`${kind} ${DIR_NAME[ed.dir].toLowerCase()} ${fcm(L)} — ${s.name}`,type:kind,material:s.material,acab:s.acab,qty:s.qty||1};
   let n;
   if(ed.dir==='a'){ // slanted edge: strip parallel to it, 4 cm off
     const g=4,[ax,ay]=ed.a,P=(u,v)=>[r1(ax+ed.ux*u+ed.nx*v),r1(ay+ed.uy*u+ed.ny*v)];
@@ -1254,6 +1260,8 @@ function renderInspector(){
     <label class="full">Nome<input id="f-name" data-f="name" type="text" value="${esc(s.name)}"></label>
     <label>Tipo / item<select id="f-type" data-f="type">${typeOpts(s.type)}</select></label>
     <label>Material<select id="f-mat" data-f="material">${matOpts(s.material)}</select></label>
+    <label>Acabamento<select id="f-acab" data-f="acab"><option value="">Polida</option>${ACAB.map(([k,n])=>`<option value="${k}"${s.acab===k?' selected':''}>${n}</option>`).join('')}</select></label>
+    ${s.acab&&matOf(s).semPreco?`<p class="cutlist full" style="color:var(--cut)">${esc(matBase(s).name)} não tem preço de ${acabNome(s.acab).toLowerCase()} — usando o da polida. Cadastre em Materiais.</p>`:''}
     ${s.kind==='rect'?`<label>Comprimento (cm)<input id="f-w" data-f="w" type="number" min="1" step="0.5" value="${s.w}"></label>
     <label>Largura (cm)<input id="f-h" data-f="h" type="number" min="1" step="0.5" value="${s.h}"></label>`:''}
     <label>Quantidade<input id="f-qty" data-f="qty" type="number" min="1" step="1" value="${s.qty||1}"></label>
@@ -1297,6 +1305,7 @@ function applyField(t){
   if(f==='w'||f==='h'){const v=parseFloat(t.value);if(!(v>0))return;s[f]=r1(v)}
   else if(f==='qty'){const v=parseInt(t.value);if(!(v>=1))return;const old=+s.qty||1;s.qty=v;for(const k of pieces())if(k.parent===s.id&&(+k.qty||1)===old)k.qty=v}
   else if(f==='material'){s.material=t.value;for(const k of pieces())if(k.parent===s.id)k.material=t.value}
+  else if(f==='acab'){s.acab=t.value||undefined;for(const k of pieces())if(k.parent===s.id)k.acab=s.acab;renderInspector()}
   else s[f]=t.value;
   renderCanvas();renderTop();renderMetrics();renderTab();save();
 }
@@ -1443,7 +1452,10 @@ function renderTab(){
       renderAll();save();fit();toast(`${s.name}: ${f2(w*h/1e4*q)} m²`);};
   }else{
     el.innerHTML=sec('m-pedras','gem','Pedras e preço por m²',`<div style="display:flex;flex-direction:column;gap:8px">
-      ${S.materials.map(m=>`<div class="mat" data-m="${m.id}"><input id="mc-${m.id}" type="color" data-mf="color" value="${m.color}" aria-label="Cor"><input id="mn-${m.id}" type="text" data-mf="name" value="${esc(m.name)}" aria-label="Nome do material"><input id="mp-${m.id}" type="number" data-mf="price" min="0" step="10" value="${m.price}" aria-label="Preço por m²"><button class="x" data-rm="${m.id}" aria-label="Remover material">✕</button></div>`).join('')}
+      ${S.materials.map(m=>`<div class="mat" data-m="${m.id}"><input id="mc-${m.id}" type="color" data-mf="color" value="${m.color}" aria-label="Cor"><input id="mn-${m.id}" type="text" data-mf="name" value="${esc(m.name)}" aria-label="Nome do material"><input id="mp-${m.id}" type="number" data-mf="price" min="0" step="10" value="${m.price}" aria-label="Preço por m²"><button class="x" data-rm="${m.id}" aria-label="Remover material">✕</button>
+        <details class="acab"><summary>Preço por acabamento${ACAB.some(([k])=>+(m.acab||{})[k]>0)?' · '+ACAB.filter(([k])=>+(m.acab||{})[k]>0).map(a=>a[1]).join(', '):''}</summary><div class="acabg">
+          ${ACAB.map(([k,n])=>`<label>${n}<input id="ma-${m.id}-${k}" type="number" data-mfa="${k}" min="0" step="10" value="${(m.acab||{})[k]||''}" placeholder="${m.price}" aria-label="${n} — R$ por m²"></label>`).join('')}
+        </div></details></div>`).join('')}
       </div><div class="actions"><button class="btn" id="addMat">+ Pedra</button></div>`,true,S.materials.length+' pedra'+(S.materials.length===1?'':'s'))
     +sec('m-trocar','swap','Trocar a pedra de todas as peças',`<div class="genlen" style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);font-size:13px"><select id="allMat" style="flex:1">${matOpts(S.defMat)}</select><button class="btn primary" id="allMatBtn">Aplicar</button></div>`,false)
     +sec('m-itens','tag','Itens com preço fixo',`<p class="hint" style="margin-bottom:8px">Cubas, válvulas, instalação, frete… Entram no PDF pela tela de revisão.</p><div style="display:flex;flex-direction:column;gap:8px">
@@ -1463,6 +1475,7 @@ tb.addEventListener('input',e=>{
   const t=e.target;
   if(t.dataset.itf){const it=cfg.itens[+t.closest('[data-it]').dataset.it];it[t.dataset.itf]=t.dataset.itf==='preco'?+t.value:t.value;saveCfg();return}
   if(t.dataset.o){S[t.dataset.o]=t.type==='checkbox'?t.checked:+t.value;renderTop();renderCanvas();renderMetrics();save();return}
+  if(t.dataset.mfa){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(!m)return;m.acab={...m.acab,[t.dataset.mfa]:+t.value||0};renderTop();renderCanvas();renderMetrics();save();catSalvar();return}
   if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(!m)return;m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save();catSalvar()}
 });
 tb.addEventListener('change',e=>{if(pending){pushUndo(pending);pending=null}const t=e.target;if(t.dataset.mf){const m=S.materials.find(x=>x.id===t.closest('[data-m]').dataset.m);if(m){m[t.dataset.mf]=t.dataset.mf==='price'?+t.value:t.value;renderTop();renderCanvas();renderDefaults();save();catSalvar()}}if(t.dataset.o==='discountCuts'||t.dataset.o==='snap'){S[t.dataset.o]=t.type==='checkbox'?t.checked:+t.value;t.blur();renderTab();renderTop();save()}});
