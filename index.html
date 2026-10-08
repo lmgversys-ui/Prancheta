@@ -202,6 +202,7 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
 .modal[hidden]{display:none}
 .sheet{background:var(--panel);border-radius:16px;width:100%;max-width:600px;max-height:calc(100% - 16px);overflow:auto;padding:18px;box-shadow:var(--shadow)}
 .sheet h2{margin:0 0 4px;font-size:18px}
+.rvopts{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:12px}.rvopts label{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink);cursor:pointer}.rvopts input{width:18px;height:18px;accent-color:var(--accent)}
 .prbtns{display:flex;flex-direction:column;gap:10px;margin:16px 0 6px}.prbtns .btn{justify-content:center;padding:12px;font-size:15px}.prbtns .btn svg{width:20px;height:20px}
 .btn.wa{background:#1FA855;border-color:#1FA855;color:#fff}
 .rv{display:grid;grid-template-columns:minmax(0,1fr) 112px 34px;gap:6px 8px;padding:10px 0;border-bottom:1px solid var(--line);align-items:start}
@@ -361,6 +362,7 @@ tr.row td .x.warn{background:var(--cut);color:#fff}
   <div id="rvRows"></div>
   <div class="actions"><button class="btn" id="rvAdd">+ Adicionar item</button><button class="btn" id="rvReset">Voltar aos valores do desenho</button></div>
   <div class="actions"><select id="rvItem" aria-label="Adicionar item da tabela" style="flex:1"></select></div>
+  <div class="rvopts"><label><input type="checkbox" id="rvDes"> Incluir o desenho das peças</label><label><input type="checkbox" id="rvCurto"> Só a primeira medida (sem largura nem altura)</label></div>
   <div class="fields rvpay">
     <label>Desconto<span class="gen"><input id="rvDesc" type="text" inputmode="decimal" placeholder="0"><select id="rvDescT" aria-label="Tipo de desconto"><option>R$</option><option>%</option></select></span></label>
     <label>Entrada (R$)<input id="rvEnt" type="text" inputmode="decimal" placeholder="0"></label>
@@ -1515,9 +1517,11 @@ function serviceLines(c,loss){
   for(const r of c.rows){if(done.has(r.p.id))continue;
     const ms=groupOf(r.p.id).map(i=>byP.get(i)).filter(Boolean);ms.forEach(m=>done.add(m.p.id));const root=ms[0];
     const price=ms.reduce((a,m)=>a+m.m2*loss*(+m.mat.price||0)+m.cuts.length*m.qty*cp,0);
-    const extras=[...new Set(ms.slice(1).map(k=>{const z=sizeOf(k.p);return k.p.type.toLowerCase()+' '+fcm(Math.min(z.w,z.h))+'cm'}))];
+    // "Só a primeira medida": the client sees the length only, so the quote can't be passed on to another supplier
+    const curto=S.pdfCurto,z0=sizeOf(root.p),medida=curto?(z0.f==='L/U'?'formato em L/U, ':'')+fcm(Math.max(z0.w,z0.h))+' cm':sizeTxt(root);
+    const extras=[...new Set(ms.slice(1).map(k=>{const z=sizeOf(k.p);return k.p.type.toLowerCase()+(curto?'':' '+fcm(Math.min(z.w,z.h))+'cm')}))];
     const cutsTxt=[...new Set(ms.flatMap(m=>m.cuts.map(x=>x.name.toLowerCase().replace(/^(re)?corte( de| p\/| para)? */,''))))];
-    out.push({key:root.p.id,desc:(root.qty>1?root.qty+'x ':'')+root.p.name+' - '+sizeTxt(root)+(extras.length?', '+extras.join(', '):'')+(cutsTxt.length?', com corte de '+cutsTxt.join(' e '):''),mat:[...new Set(ms.map(m=>m.mat.name))].join(' / '),price});
+    out.push({key:root.p.id,desc:(root.qty>1?root.qty+'x ':'')+root.p.name+' - '+medida+(extras.length?', '+extras.join(', '):'')+(cutsTxt.length?', com corte de '+cutsTxt.join(' e '):''),mat:[...new Set(ms.map(m=>m.mat.name))].join(' / '),price});
   }
   for(const[n,q]of Object.entries(c.cutCount))if(n.includes('fora de peça'))out.push({key:'cut:'+n,desc:q+' '+n,mat:'',price:q*cp});
   return out;
@@ -1567,7 +1571,7 @@ async function exportPdf(){
   if(tt.dv){need(12);put('Subtotal',MID+3,y,10.5,'normal',INK);put(money(tt.sub),R-3,y,10.5,'normal',INK,'right');y+=5.5;put('Desconto'+(S.desconto.tipo==='%'?' ('+fcm(+S.desconto.valor)+'%)':''),MID+3,y,10.5,'normal',INK);put('- '+money(tt.dv),R-3,y,10.5,'normal',INK,'right');y+=4}
   need(14);doc.setFillColor(...TEAL);doc.rect(MID,y,R-MID,9,'F');put('Total',MID+3,y+6.3,12,'bold',W);put(money(total),R-3,y+6.3,12,'bold',W,'right');y+=16;
   // drawing
-  if(cfg.desenho&&pieces().length){try{const d=await drawingPng(),iw=R-M,ih=Math.min(95,iw*d.h/d.w),w2=ih*d.w/d.h;need(ih+20);section('Desenho das peças');doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y-2,w2,ih);y+=ih+4}catch(e){}}
+  if((S.pdfDesenho??cfg.desenho)&&pieces().length){try{const d=await drawingPng(),iw=R-M,ih=Math.min(95,iw*d.h/d.w),w2=ih*d.w/d.h;need(ih+20);section('Desenho das peças');doc.addImage(d.png,'JPEG',M+(iw-w2)/2,y-2,w2,ih);y+=ih+4}catch(e){}}
   // payment
   section('Pagamento');put('Meios de pagamento',M+3,y,10.5,'bold',INK);if(cfg.pix)put('PIX',MID+3,y,10.5,'bold',INK);y+=5;
   const pg=wrap(cfg.pagamento,MID-M-8,10.5);font(10.5,'normal',INK);doc.text(pg,M+3,y);if(cfg.pix)doc.text(wrap(cfg.pix,R-MID-6,10.5),MID+3,y);y+=pg.length*4.5+6;
@@ -1576,8 +1580,10 @@ async function exportPdf(){
   const notes=[S.obs,cfg.obs].filter(x=>x&&x.trim()).join('\n\n');
   if(notes){section('Informações adicionais');for(const l of wrap(notes,R-M-6,10.5)){need(5);font(10.5,'normal',INK);doc.text(l,M+3,y);y+=4.6}y+=4}
   // footer
-  need(32);y=Math.max(y,PH-M-30);doc.setDrawColor(200,204,208);doc.setLineWidth(.4);doc.line(M,y,R,y);y+=7;
-  put(cfg.resp,M+3,y,10,'normal',MUT);if(cfg.cnpj)put('CNPJ: '+cfg.cnpj,M+3,y+5.5,10,'normal',MUT);const fy=contacts(MID,y);socials(M+3,Math.max(fy,y+12)+2);
+  // footer at the bottom of the last page; when there is no room it is left out (the header already has the same data)
+  // instead of starting a page with nothing but the footer
+  if(y+32<=PH-M){y=PH-M-30;doc.setDrawColor(200,204,208);doc.setLineWidth(.4);doc.line(M,y,R,y);y+=7;
+    put(cfg.resp,M+3,y,10,'normal',MUT);if(cfg.cnpj)put('CNPJ: '+cfg.cnpj,M+3,y+5.5,10,'normal',MUT);const fy=contacts(MID,y);socials(M+3,Math.max(fy,y+12)+2)}
   if(!S.status||S.status==='Rascunho'){S.status='Enviado';save()}
   const cli=(S.name||'').split(' — ')[0].trim();
   abrirPronto({nome:'Orçamento '+S.num+' '+(S.name||'sem nome'),blob:doc.output('blob'),tel:S.tel,
@@ -1678,10 +1684,14 @@ function renderReview(){
   renderReviewTotal();
 }
 const renderReviewTotal=()=>{const t=pdfTotals(),c=condicao(t);$('#rvSub').textContent=(t.dv?'Subtotal '+money(t.sub)+' − desconto '+money(t.dv):'Total do PDF')+(c?' · '+c:'');$('#rvTotal').textContent=money(t.total)};
-function fillPay(){const d=S.desconto||{};$('#rvDesc').value=d.valor?f2(d.valor):'';$('#rvDescT').value=d.tipo==='%'?'%':'R$';$('#rvEnt').value=S.entrada?f2(S.entrada):'';$('#rvParc').value=S.parcelas||'';
+function fillPay(){$('#rvDes').checked=S.pdfDesenho??cfg.desenho;$('#rvCurto').checked=!!S.pdfCurto;const d=S.desconto||{};$('#rvDesc').value=d.valor?f2(d.valor):'';$('#rvDescT').value=d.tipo==='%'?'%':'R$';$('#rvEnt').value=S.entrada?f2(S.entrada):'';$('#rvParc').value=S.parcelas||'';
   $('#rvItem').innerHTML='<option value="">+ Item da tabela…</option>'+(cfg.itens||[]).map((it,i)=>`<option value="${i}">${esc(it.nome)} — ${money(it.preco)}</option>`).join('')}
 $('#rvItem').onchange=e=>{const it=(cfg.itens||[])[e.target.value];e.target.value='';if(!it)return;(S.pdfExtra=S.pdfExtra||[]).push({desc:it.nome,mat:'',price:+it.preco||0});save();renderReview()};
 for(const id of['rvDesc','rvDescT','rvEnt','rvParc'])$('#'+id).addEventListener('input',()=>{S.desconto={tipo:$('#rvDescT').value,valor:parseMoney($('#rvDesc').value)};S.entrada=parseMoney($('#rvEnt').value);S.parcelas=parseInt($('#rvParc').value)||1;save();renderReviewTotal()});
+$('#rvDes').onchange=e=>{S.pdfDesenho=e.target.checked;save()};
+$('#rvCurto').onchange=e=>{S.pdfCurto=e.target.checked;save();renderReview();
+  // descriptions typed by hand are kept as written
+  const n=Object.values(S.pdfEdit||{}).filter(x=>x.desc!=null&&!x.hide).length;if(n)toast(n+(n>1?' itens com descrição editada continuam':' item com descrição editada continua')+' como você escreveu — use “Voltar aos valores do desenho” se quiser')};
 $('#rvOs').onclick=()=>{rv.hidden=true;exportOs()};
 const rv=$('#review');
 $('#pdfBtn').onclick=()=>{flush();fillPay();renderReview();rv.hidden=false};
