@@ -451,59 +451,107 @@ function mergeCfg(R,L){
     o[k]=!(k in R)||(k in L&&(tL[k]||0)>(tR[k]||0))?L[k]:R[k];const m=Math.max(tL[k]||0,tR[k]||0);if(m)t[k]=m}
   return{...o,_t:t,...mergePedras(R.pedras,L.pedras,R.pedrasDel,L.pedrasDel)}}
 const localList=()=>{try{return JSON.parse(localStorage.getItem(LKEY))||{}}catch(e){return{}}};
+// writes the budget list; when the device runs out of space, old budgets already safe in the cloud keep only their summary here
+let avisoCheio=0;
+function gravaLista(l){
+  for(let i=0;i<4;i++){
+    try{localStorage.setItem(LKEY,JSON.stringify(l));return true}catch(e){}
+    if(!sess)break;const p=pend(),velhos=Object.entries(l).filter(([id,b])=>b.estado&&!p[id]&&id!==S.id).sort((a,b)=>a[1].atualizado-b[1].atualizado);
+    if(!velhos.length)break;for(const[,b]of velhos.slice(0,Math.ceil(velhos.length/3))){delete b.estado;b.nuvem=true}}
+  if(Date.now()-avisoCheio>60000){avisoCheio=Date.now();toast(sess?'Memória do aparelho cheia — o orçamento segue salvo na nuvem':'Memória do aparelho cheia — entre na Conta na nuvem ou baixe uma cópia dos orçamentos')}
+  return false}
 let db=null,cloud=null,cloudQ=Promise.resolve(),lastSync=0,syncErr='';
 /* ---------- Supabase: login + sync of budgets and company data ---------- */
-// every device keeps its own copy (LKEY); edits go up from a pending list, others come down by server time (mod)
+// every device keeps its own copy (LKEY); edits go up from a pending list, other devices' edits come down by server
+// time (mod): at once through realtime, and every 15 s as a fallback
 const SB='https://imttenhjtlfacxogxqvr.supabase.co',SBK='sb_publishable_3W956UmyUDT6pnreUaceEQ_uTv1fr-2';
 const SKEY='prancheta-sb-sessao',PKEY='prancheta-sb-pend',MKEY='prancheta-sb-mod';
 const jget=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},jset=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
-let sess=jget(SKEY,null),sbBusy=null,sbAgain=false,sbErr='',sbLast=0;
+let sess=jget(SKEY,null),sbBusy=null,sbAgain=false,sbErr='',sbLast=0,rtOk=false;
+const mem={}; // budgets saved in this session: they still go up even if the device memory is full
 async function sbAuth(path,data,tok){
   const r=await fetch(SB+'/auth/v1/'+path,{method:'POST',headers:{apikey:SBK,'Content-Type':'application/json',...(tok?{Authorization:'Bearer '+tok}:{})},body:JSON.stringify(data)});
   const o=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(o.msg||o.error_description||o.message||'erro '+r.status);e.auth=true;throw e}return o}
-function keepSess(o){sess={access_token:o.access_token,refresh_token:o.refresh_token,expires_at:o.expires_at||Math.floor(Date.now()/1000)+(o.expires_in||3600),email:o.user?.email||sess?.email,uid:o.user?.id||sess?.uid};jset(SKEY,sess)}
-async function token(){
-  if(sess.expires_at-60<Date.now()/1000){try{keepSess(await sbAuth('token?grant_type=refresh_token',{refresh_token:sess.refresh_token}))}catch(e){if(e.auth)sbSair(true);throw e}}
+function keepSess(o){sess={access_token:o.access_token,refresh_token:o.refresh_token,expires_at:o.expires_at||Math.floor(Date.now()/1000)+(o.expires_in||3600),email:o.user?.email||sess?.email,uid:o.user?.id||sess?.uid};jset(SKEY,sess);rtAuth()}
+async function token(force){
+  if(force||sess.expires_at-60<Date.now()/1000){try{keepSess(await sbAuth('token?grant_type=refresh_token',{refresh_token:sess.refresh_token}))}catch(e){if(e.auth)sbSair(true);throw e}}
   return sess.access_token}
-async function rest(path,opt={}){
+async function rest(path,opt={},again=true){
   const r=await fetch(SB+'/rest/v1/'+path,{...opt,headers:{apikey:SBK,Authorization:'Bearer '+await token(),'Content-Type':'application/json',...opt.headers}});
+  // device clock off or token revoked: renew the login once and try again
+  if(r.status===401&&again&&sess){await token(true);return rest(path,opt,false)}
   if(!r.ok)throw new Error((await r.text()).slice(0,200)||'erro '+r.status);return r.status===204||r.status===201?null:r.json()}
+// pending: id → edit time, or {del: time} for a budget removed here
 const pend=()=>jget(PKEY,{});
-function markPend(id){if(!sess)return;const p=pend();p[id]=Date.now();jset(PKEY,p);sbSync()}
+function markPend(id,del){if(!sess)return;const p=pend();p[id]=del?{del:Date.now()}:Date.now();jset(PKEY,p);sbSyncLogo()}
 function sbSync(){
   if(!sess)return;if(sbBusy){sbAgain=true;return sbBusy}
-  sbBusy=(async()=>{try{do{sbAgain=false;await sbPull();await sbPush();await sbCfg()}while(sbAgain&&sess);sbErr='';sbLast=Date.now()}
+  sbBusy=(async()=>{try{do{sbAgain=false;await sbPull();await sbPush();await sbCfg()}while(sbAgain&&sess);sbErr='';sbLast=Date.now();rtLigar()}
     catch(e){sbErr=e.message||'erro'}finally{sbBusy=null;renderSync()}})();
   return sbBusy}
+let sbT=null;const sbSyncLogo=()=>{clearTimeout(sbT);sbT=setTimeout(sbSync,250)};
+// the open budget is being changed right now: unsaved edit, dragging or drawing, or the PDF review open
+const ocupado=()=>!!saveT||(!!mode&&!['pan','pinch','box'].includes(mode))||draft.pts.length>0||document.getElementById('review')?.hidden===false;
 async function sbPull(){
   // look 10 s back so a save that committed late is not skipped; re-reading a row is harmless
   const since=new Date(new Date(localStorage.getItem(MKEY)||0).getTime()-10000).toISOString();
   const rows=await rest('orcamentos?select=*&mod=gt.'+encodeURIComponent(since)+'&order=mod.asc&limit=500');
   if(!rows.length)return;
   const l=localList(),p=pend();let novoS=null,mudou=false;
-  for(const r of rows){const loc=l[r.id],mine=loc?loc.atualizado:p[r.id];
-    if(p[r.id]&&mine>r.atualizado)continue; // this device has a newer edit (or delete) still to send
+  for(const r of rows){const loc=l[r.id],pe=p[r.id],meu=pe&&typeof pe==='object'?pe.del:loc?loc.atualizado:pe;
+    if(pe&&meu>r.atualizado)continue; // this device has a newer edit (or removal) still to send
     delete p[r.id];
     if(r.apagado){if(loc){delete l[r.id];mudou=true}continue}
-    if(!loc||r.atualizado>loc.atualizado){l[r.id]={status:r.status,nome:r.nome,tel:r.tel,end:r.endereco,atualizado:r.atualizado,total:+r.total,m2:+r.m2,estado:JSON.stringify(r.estado)};mudou=true;if(r.id===S.id&&!saveT)novoS=l[r.id]}}
-  try{localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}jset(PKEY,p);localStorage.setItem(MKEY,rows[rows.length-1].mod);
+    if(loc&&loc.estado&&r.atualizado<=loc.atualizado)continue;
+    const nb={status:r.status,nome:r.nome,tel:r.tel,end:r.endereco,atualizado:r.atualizado,total:+r.total,m2:+r.m2,estado:JSON.stringify(r.estado)};
+    if(r.id===S.id&&r.atualizado>(loc?.atualizado||0)&&ocupado()){
+      // the same budget changed here and on another device at the same time: keep both
+      const o=r.estado,id=uid();o.id=id;o.name=(o.name||'Sem nome')+' (outro aparelho)';
+      l[id]={...nb,nome:o.name,estado:JSON.stringify(o),atualizado:Date.now()};p[id]=Date.now();mudou=true;
+      toast('Este orçamento também foi mudado em outro aparelho — aquela versão ficou salva como "'+o.name+'"');continue}
+    l[r.id]=nb;mudou=true;if(r.id===S.id)novoS=nb}
+  gravaLista(l);jset(PKEY,p);localStorage.setItem(MKEY,rows[rows.length-1].mod);
   if(rows.length===500)sbAgain=true;
-  if(novoS){try{const o=JSON.parse(novoS.estado);if(o.shapes){S=o;undoStack=[];selId=null;multi.clear();try{localStorage.setItem(KEY,novoS.estado)}catch(e){}renderDefaults();renderAll()}}catch(e){}}
+  if(novoS){try{const o=JSON.parse(novoS.estado);if(o.shapes){S=o;undoStack=[];selId=null;multi.clear();catAplicar();try{localStorage.setItem(KEY,novoS.estado)}catch(e){}renderDefaults();renderAll()}}catch(e){}}
   if(mudou)renderLista()}
-async function sbPush(){
-  const p=pend(),ids=Object.keys(p);if(!ids.length)return;const l=localList();
-  const row=id=>{const b=l[id];return b?{id,nome:b.nome,tel:b.tel,endereco:b.end,status:b.status,total:+b.total||0,m2:+b.m2||0,atualizado:b.atualizado,estado:JSON.parse(b.estado),apagado:false}
-    :{id,nome:null,tel:null,endereco:null,status:null,total:0,m2:0,atualizado:p[id],estado:{},apagado:true}};
-  for(let i=0;i<ids.length;i+=40){const part=ids.slice(i,i+40);
-    await rest('orcamentos',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(part.map(row))});
-    const q=pend();for(const id of part)if(q[id]===p[id])delete q[id];jset(PKEY,q)}}
+async function sbPush(rapido){
+  const p=pend(),ids=Object.keys(p);if(!ids.length)return;const l=localList(),rows=[],nada=[];
+  for(const id of ids){const pe=p[id];
+    if(pe&&typeof pe==='object'){rows.push({id,nome:null,tel:null,endereco:null,status:null,total:0,m2:0,atualizado:pe.del,estado:{},apagado:true});continue}
+    const b=mem[id]&&!(l[id]?.atualizado>mem[id].atualizado)?mem[id]:l[id];
+    if(!b||!b.estado){nada.push(id);continue} // only a summary here: nothing to send
+    rows.push({id,nome:b.nome,tel:b.tel,endereco:b.end,status:b.status,total:+b.total||0,m2:+b.m2||0,atualizado:b.atualizado,estado:JSON.parse(b.estado),apagado:false})}
+  const tira=feitos=>{const q=pend();for(const id of feitos)if(JSON.stringify(q[id])===JSON.stringify(p[id]))delete q[id];jset(PKEY,q)};
+  tira(nada);
+  for(let i=0;i<rows.length;i+=40){const part=rows.slice(i,i+40),body=JSON.stringify(part);
+    // when the app is being closed, keepalive lets the send finish in the background
+    await rest('orcamentos',{method:'POST',keepalive:!!rapido&&body.length<60000,headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body});
+    tira(part.map(r=>r.id))}}
 async function sbCfg(){
   const a=(await rest('empresa?select=atualizado'))[0]?.atualizado||0,sujo=localStorage.getItem(DKEY);
   if(a===+localStorage.getItem(VKEY)&&!sujo)return;
   const R=a?(await rest('empresa?select=dados'))[0].dados:{},M=mergeCfg(R,cfg),sem=o=>{const{atualizado,...r}=o;return JSON.stringify(r)};
-  if(sem(M)!==sem(cfg)){cfg={...CFG0,...M,atualizado:Date.now()};cfgPrev=cpy(cfg);try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(catAplicar()){renderDefaults();renderAll();save()}else renderTab()}
+  if(sem(M)!==sem(cfg)){cfg={...CFG0,...M,atualizado:Date.now()};cfgPrev=cpy(cfg);try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(catAplicar()){renderDefaults();renderAll()}else renderTab()}
   let v=a;if(!a||sem(M)!==sem(R)){v=Date.now();await rest('empresa',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({user_id:sess.uid,dados:M,atualizado:v})})}
   try{localStorage.setItem(VKEY,v);if(localStorage.getItem(DKEY)===sujo)localStorage.removeItem(DKEY)}catch(e){}}
+// before taking a budget number: get the latest counter from the other devices (up to 4 s)
+async function sbEmDia(){if(!sess||!navigator.onLine)return;try{await Promise.race([sbSync(),new Promise(r=>setTimeout(r,4000))])}catch(e){}}
+// app being closed or sent to the background: send pending edits now
+function sbEnviarJa(){if(!sess||sbBusy||!Object.keys(pend()).length)return;sbBusy=(async()=>{try{await sbPush(true)}catch(e){}finally{sbBusy=null;if(sbAgain){sbAgain=false;sbSync()}}})()}
+/* realtime: the cloud warns this device the moment another one saves */
+let rtLib=null,rtCli=null,rtCh=null;
+function rtLigar(){
+  if(!sess||rtCh)return;
+  rtLib=rtLib||new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js';sc.onload=()=>window.supabase?ok(window.supabase):no();sc.onerror=no;document.head.append(sc)});
+  rtLib.then(lib=>{if(!sess||rtCh)return;
+    rtCli=rtCli||lib.createClient(SB,SBK,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+    rtCli.realtime.setAuth(sess.access_token);
+    rtCh=rtCli.channel('marmofacil').on('postgres_changes',{event:'*',schema:'public',table:'orcamentos'},()=>sbSyncLogo())
+      .on('postgres_changes',{event:'*',schema:'public',table:'empresa'},()=>sbSyncLogo())
+      .subscribe(st=>{const ok=st==='SUBSCRIBED';if(ok!==rtOk){rtOk=ok;renderSync()}if(st==='CHANNEL_ERROR'||st==='TIMED_OUT'||st==='CLOSED'){rtDesligar()}})})
+  .catch(()=>{rtLib=null})}
+function rtAuth(){if(rtCli&&sess)try{rtCli.realtime.setAuth(sess.access_token)}catch(e){}}
+function rtDesligar(){const c=rtCh;rtCh=null;rtOk=false;if(c&&rtCli)try{rtCli.removeChannel(c)}catch(e){}}
 const sbMsg=e=>e instanceof TypeError?'Sem internet agora — tente de novo':/invalid login/i.test(e.message)?'E-mail ou senha incorretos':/already registered|already exists/i.test(e.message)?'Esse e-mail já tem conta — use Entrar':/not confirmed/i.test(e.message)?'Confirme o e-mail pelo link que chegou na sua caixa de entrada':/password/i.test(e.message)?'Senha fraca — use pelo menos 6 caracteres':'Não foi possível entrar: '+e.message;
 async function sbEntrar(novo){
   const email=$('#sb-email').value.trim(),password=$('#sb-senha').value;
@@ -516,32 +564,39 @@ async function sbEntrar(novo){
     toast('Conectado — sincronizando seus orçamentos');renderTab();await sbSync();renderLista()}
   catch(e){toast(sbMsg(e))}}
 function sbSair(silencioso){
+  rtDesligar();
   if(sess)fetch(SB+'/auth/v1/logout',{method:'POST',headers:{apikey:SBK,Authorization:'Bearer '+sess.access_token}}).catch(()=>{});
   sess=null;try{localStorage.removeItem(SKEY);localStorage.removeItem(MKEY)}catch(e){}
   if(silencioso)toast('Sua sessão expirou — entre de novo em Clientes › Conta na nuvem');if(tab==='clientes')renderTab()}
 setTimeout(()=>sbSync(),300);
-setInterval(()=>{if(sess&&!document.hidden)sbSync()},60000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)sbSync()});addEventListener('online',()=>sbSync());
+// fallback check every 15 s (every minute while realtime is on)
+setInterval(()=>{if(sess&&!document.hidden&&(!rtOk||Date.now()-sbLast>60000))sbSync()},15000);
+addEventListener('online',()=>sbSync());
 function body(){const c=calc();return{status:S.status||'Rascunho',nome:S.name||'Sem nome',tel:S.tel||'',end:S.end||'',atualizado:Date.now(),total:c.total,m2:c.m2l,estado:JSON.stringify(S)}}
 function saveNow(){
-  saveT=null;const b=body();
-  try{localStorage.setItem(KEY,JSON.stringify(S));const l=localList();l[S.id]=b;localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}
+  saveT=null;const b=body();mem[S.id]=b;
+  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+  const l=localList();
+  // a budget still empty (no client, no pieces) stays out of the list until something is filled in
+  if(!l[S.id]&&!S.shapes.length&&!S.name&&!S.tel&&!S.end&&!S.obs)return;
+  l[S.id]=b;gravaLista(l);
   pushCloud(S.id,b);
 }
 function pushCloud(id,b){markPend(id);if(!db)return;cloudQ=cloudQ.then(()=>db.doc('orcamentos/'+id).set(b)).then(()=>{lastSync=Date.now();syncErr='';renderSync()},e=>{syncErr=e.code||'erro';renderSync()})}
 let saveT=null;function save(){clearTimeout(saveT);saveT=setTimeout(saveNow,800)}
-addEventListener('pagehide',()=>flush());document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
+addEventListener('pagehide',()=>{flush();sbEnviarJa()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){flush();sbEnviarJa()}else sbSync()});
 function flush(){if(saveT){clearTimeout(saveT);saveNow()}}
 // every saved budget, newest first: the cloud list when it is available, else this device's list
 function lista(){return((!sess&&cloud)||Object.entries(localList()).map(([id,b])=>({id,...b}))).slice().sort((a,b)=>b.atualizado-a.atualizado)}
 window.claude?.use?.('db').then(d=>{if(!d)return;db=d;
-  db.doc('config/empresa').get().then(x=>{const o=x.exists&&x.data();if(o&&o.atualizado>cfg.atualizado){cfg={...CFG0,...o};try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(tab==='clientes')renderTab()}else if(cfg.atualizado)db.doc('config/empresa').set({...cfg}).catch(()=>{})}).catch(()=>{});
+  db.doc('config/empresa').get().then(x=>{const o=x.exists&&x.data();if(o&&o.atualizado>cfg.atualizado){cfg={...CFG0,...mergeCfg(o,cfg),atualizado:o.atualizado};cfgPrev=cpy(cfg);try{localStorage.setItem(CKEY,JSON.stringify(cfg))}catch(e){}if(catAplicar())renderAll();else if(tab==='clientes')renderTab()}else if(cfg.atualizado)db.doc('config/empresa').set({...cfg}).catch(()=>{})}).catch(()=>{});
   let first=true;
   db.collection('orcamentos').orderBy('atualizado','desc').limit(1000).onSnapshot(q=>{
     cloud=q.docs.map(x=>({id:x.id,...x.data()}));
     if(first&&!q.metadata.fromCache){first=false;const l=localList(),byId=Object.fromEntries(cloud.map(b=>[b.id,b]));
       // send up what only this device has (or has newer); take the newer cloud copy of the open budget
-      for(const[id,b]of Object.entries(l))if(!byId[id]||byId[id].atualizado<b.atualizado)pushCloud(id,b);
+      for(const[id,b]of Object.entries(l))if(b.estado&&(!byId[id]||byId[id].atualizado<b.atualizado))pushCloud(id,b);
       const c=byId[S.id];if(c&&!saveT&&(!l[S.id]||c.atualizado>l[S.id].atualizado)){try{const o=JSON.parse(c.estado);if(o.shapes){S=o;undoStack=[];selId=null;multi.clear();try{localStorage.setItem(KEY,c.estado)}catch(e){}renderDefaults();renderAll();fit()}}catch(e){}}}
     renderLista();renderSync()},()=>{cloud=null;db=null;renderSync()});
 });
@@ -1287,7 +1342,9 @@ function sec(id,icon,title,body,open=false,sum=''){
 }
 let busca='',delArm='',filtro='';
 function renderSync(){const el=$('#syncMsg');if(!el)return;
-  if(sess){el.textContent=sbErr?'Sem conexão com a nuvem agora — ficou salvo neste aparelho e vai sozinho quando a internet voltar.':sbLast?'Salvo na nuvem às '+new Date(sbLast).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — aparece no PC e no celular.':'Conectando à nuvem…';return}
+  if(sess){const n=Object.keys(pend()).length,h=new Date(sbLast).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    el.textContent=sbErr?(navigator.onLine?'Não consegui falar com a nuvem agora':'Sem internet')+' — está salvo neste aparelho'+(n?' ('+n+(n>1?' alterações esperando':' alteração esperando')+')':'')+' e vai sozinho quando der.'
+      :sbLast?'Tudo salvo na nuvem às '+h+(rtOk?' · atualiza na hora entre os aparelhos.':' · confere a cada 15 segundos.'):'Conectando à nuvem…';return}
   el.textContent=!db?'Salvo só neste aparelho. Entre em "Conta na nuvem" para ver no PC e no celular.':syncErr?'Não foi possível salvar na nuvem agora — ficou salvo neste aparelho.':db?(lastSync?'Salvo na nuvem às '+new Date(lastSync).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' — aparece no PC e no celular.':'Salvando na nuvem automaticamente.'):''}
 function renderLista(){const el=$('#c-lista');if(!el)return;
   const q=busca.trim().toLowerCase(),L=lista().filter(b=>(!q||(b.nome+' '+b.end).toLowerCase().includes(q))&&(!filtro||(b.status||'Rascunho')===filtro));
@@ -1450,6 +1507,7 @@ function serviceLines(c,loss){
 async function exportPdf(){
   let J;try{J=await loadPdf()}catch(e){toast('Sem internet: abra uma vez com internet para ativar o PDF');return}
   flush();
+  if(!S.num)await sbEmDia();
   if(!S.num){S.num=cfg.seq+'-'+new Date().getFullYear();cfg.seq=(+cfg.seq||0)+1;saveCfg();save()}
   const c=calc(),loss=1+(+S.lossPct||0)/100,doc=new J({unit:'mm',format:'a4',compress:true});
   const M=12,PW=210,PH=297,R=PW-M,MID=PW/2,TEAL=[14,104,138],INK=[33,37,41],MUT=[108,117,125],BG=[242,243,244],W=[255,255,255];let y=0;
@@ -1609,10 +1667,19 @@ $('#copyCsv').onclick=()=>{
   copy(L.join('\n'),'Planilha copiada — cole no Excel ou Planilhas');
 };
 // switch to another saved budget (the current one is saved first)
-function openProj(b){
-  let o;try{o=typeof b.estado==='string'?JSON.parse(b.estado):b.estado}catch(e){}
+// only a file is saved on opening; a budget from the list is saved again only when something changes in it
+async function openProj(b,arquivo){
+  let est=b.estado;
+  // old budget kept only in the cloud (device memory was full): fetch it
+  if(!est&&b.nuvem){if(sess)try{est=(await rest('orcamentos?select=estado&id=eq.'+encodeURIComponent(b.id)))[0]?.estado}catch(e){}
+    if(!est){toast('Sem internet — este orçamento antigo está guardado só na nuvem');return false}}
+  let o;try{o=typeof est==='string'?JSON.parse(est):est}catch(e){}
   if(!o||!o.shapes||!o.materials){toast('Arquivo inválido — não é um orçamento do Marmofácil');return false}
-  flush();S=o;if(!S.id)S.id=b.id||uid();undoStack=[];selId=null;multi.clear();renderDefaults();renderAll();fit();save();toast('Aberto: '+(S.name||'Sem nome'));return true;
+  flush();
+  // a file older than the copy already here opens as a separate budget, so it never overwrites newer work
+  if(arquivo){const loc=localList()[o.id];if(o.id&&loc&&loc.atualizado>(b.atualizado||0)){o.id=uid();o.name=(o.name||'Sem nome')+' (do arquivo)'}}
+  S=o;if(!S.id)S.id=b.id||uid();undoStack=[];selId=null;multi.clear();catAplicar();try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+  renderDefaults();renderAll();fit();if(arquivo)save();toast('Aberto: '+(S.name||'Sem nome'));return true;
 }
 // copy of the open budget ("Maria — opção 2"), to quote the same pieces in other stones
 function dupProj(){
@@ -1627,7 +1694,7 @@ function newProj(){
   renderDefaults();renderAll();fit();toast('Novo orçamento — o anterior ficou salvo em Clientes');$('#projName').focus();
 }
 async function delProj(id){
-  const l=localList();delete l[id];try{localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}markPend(id);
+  const l=localList();delete l[id];gravaLista(l);delete mem[id];markPend(id,true);
   if(db)cloudQ=cloudQ.then(()=>db.doc('orcamentos/'+id).delete()).catch(()=>{});
   if(cloud)cloud=cloud.filter(b=>b.id!==id);
   if(id===S.id)newProj();else renderLista();
@@ -1638,11 +1705,19 @@ async function saveFile(name,text,ext='json'){
   if(dl){try{await dl.save({filename,data:text});toast('Arquivo salvo')}catch(e){if(e.code!=='declined')toast('Não foi possível salvar o arquivo')}return}
   const a=document.createElement('a');a.href=URL.createObjectURL(text instanceof Blob?text:new Blob([text],{type:'application/json'}));a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
+async function baixarTodos(){
+  flush();const L=lista(),falta=L.filter(b=>!b.estado).map(b=>b.id);
+  if(falta.length&&sess)try{for(let i=0;i<falta.length;i+=50){const rs=await rest('orcamentos?select=id,estado&id=in.('+falta.slice(i,i+50).join(',')+')');for(const r of rs){const b=L.find(x=>x.id===r.id);if(b)b.estado=JSON.stringify(r.estado)}}}catch(e){}
+  const ok=L.filter(b=>b.estado);if(ok.length<L.length)toast((L.length-ok.length)+' orçamentos antigos ficaram de fora — abra com internet para incluir');
+  return saveFile('Marmofácil backup '+today(),JSON.stringify({app:'prancheta',orcamentos:ok}))}
 const today=()=>new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
 const picker=Object.assign(document.createElement('input'),{type:'file',accept:'.json,application/json',hidden:true});document.body.append(picker);
 picker.onchange=async()=>{const f=picker.files[0];picker.value='';if(!f)return;let o;try{o=JSON.parse(await f.text())}catch(e){toast('Arquivo inválido — não é um orçamento do Marmofácil');return}
-  if(Array.isArray(o.orcamentos)){const l=localList();let n=0;for(const b of o.orcamentos){if(!b||!b.id||!b.estado)continue;l[b.id]=b;pushCloud(b.id,b);n++}try{localStorage.setItem(LKEY,JSON.stringify(l))}catch(e){}renderLista();toast(n+' orçamentos restaurados');return}
-  openProj(o);};
+  if(Array.isArray(o.orcamentos)){await sbEmDia();const l=localList();let n=0;
+    for(const b of o.orcamentos){if(!b||!b.id||!b.estado)continue;const loc=l[b.id];if(loc&&loc.atualizado>=b.atualizado)continue;
+      const nb=loc?b:{...b,atualizado:Date.now()};l[b.id]=nb;mem[b.id]=nb;pushCloud(b.id,nb);n++}
+    gravaLista(l);renderLista();toast(n?n+' orçamentos restaurados':'Nada para restaurar — os orçamentos do arquivo já estão aqui, iguais ou mais novos');return}
+  openProj(o,true);};
 $('#tabbody').addEventListener('click',e=>{
   const t=e.target;
   if(t.closest('#c-new'))return newProj();
@@ -1653,7 +1728,7 @@ $('#tabbody').addEventListener('click',e=>{
   if(t.closest('#sb-sync')){sbSync();return toast('Sincronizando…')}
   if(t.closest('#c-save')){flush();return saveFile('Orçamento '+(S.name||'sem nome')+' '+today(),JSON.stringify({app:'prancheta',id:S.id,...body()}))}
   if(t.closest('#c-open'))return picker.click();
-  if(t.closest('#c-all'))return saveFile('Marmofácil backup '+today(),JSON.stringify({app:'prancheta',orcamentos:lista()}));
+  if(t.closest('#c-all'))return baixarTodos();
   const d=t.closest('[data-delp]');if(d){const id=d.dataset.delp;if(delArm!==id){delArm=id;renderLista();setTimeout(()=>{if(delArm===id){delArm='';renderLista()}},3000)}else{delArm='';delProj(id)}return}
   const r=t.closest('[data-open]');if(r&&r.dataset.open!==S.id){const b=lista().find(x=>x.id===r.dataset.open);if(b)openProj(b)}
 });

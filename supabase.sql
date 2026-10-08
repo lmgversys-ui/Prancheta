@@ -26,7 +26,11 @@ create table if not exists public.empresa (
 -- hora do servidor em cada gravação: é por ela que os aparelhos buscam o que mudou
 create or replace function public.marca_mod() returns trigger
 language plpgsql set search_path = '' as $$
-begin new.mod := now(); return new; end $$;
+begin
+  -- uma versão mais antiga nunca sobrescreve uma mais nova
+  if tg_op = 'UPDATE' and new.atualizado < old.atualizado then return null; end if;
+  new.mod := now(); return new;
+end $$;
 drop trigger if exists orcamentos_mod on public.orcamentos;
 create trigger orcamentos_mod before insert or update on public.orcamentos
   for each row execute function public.marca_mod();
@@ -39,3 +43,16 @@ create policy dono on public.orcamentos for all to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 create policy dono on public.empresa for all to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
+-- 2) Atualização na hora entre os aparelhos (tempo real)
+do $$ begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'orcamentos') then
+    alter publication supabase_realtime add table public.orcamentos;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'empresa') then
+    alter publication supabase_realtime add table public.empresa;
+  end if;
+end $$;
